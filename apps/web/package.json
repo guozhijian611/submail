@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@file-viewer/react-full": "^2.1.25",
-    "@vitejs/plugin-react": "^4.5.2",
+    "@vitejs/plugin-react": "^6.0.3",
     "dompurify": "^3.4.11",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
