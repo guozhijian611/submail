@@ -196,6 +196,31 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
   assert.match(sessionToken, /^sess_/);
   const adminHeaders = { authorization: `Bearer ${sessionToken}` };
 
+  const defaultTranslationSettings = await request(baseUrl, "/api/admin/translation-settings", { headers: adminHeaders });
+  assert.equal(defaultTranslationSettings.response.status, 200, JSON.stringify(defaultTranslationSettings.body));
+  assert.equal(defaultTranslationSettings.body.settings.default_target_language, "zh-CN");
+  assert.equal(defaultTranslationSettings.body.settings.auto_translate_english_on_open, false);
+
+  const invalidTranslationLanguage = await request(baseUrl, "/api/admin/translation-settings", {
+    method: "PUT",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      enabled: true,
+      provider: "google",
+      endpoint: "",
+      defaultTargetLanguage: "zh_CN",
+      autoTranslateEnglishOnOpen: true
+    })
+  });
+  assert.equal(invalidTranslationLanguage.response.status, 400, JSON.stringify(invalidTranslationLanguage.body));
+
+  const invalidDirectTranslationLanguage = await request(baseUrl, "/api/translate", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({ text: "Hello", targetLanguage: "zh_CN" })
+  });
+  assert.equal(invalidDirectTranslationLanguage.response.status, 400, JSON.stringify(invalidDirectTranslationLanguage.body));
+
   const repeatedSetup = await request(baseUrl, "/api/setup/admin", {
     method: "POST",
     body: JSON.stringify({
@@ -325,12 +350,15 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
       enabled: true,
       provider: "custom",
       endpoint: `${providerBaseUrl}/translate`,
-      defaultTargetLanguage: "zh-CN",
+      defaultTargetLanguage: "zh-cn",
+      autoTranslateEnglishOnOpen: true,
       apiKey: "translation-provider-key"
     })
   });
   assert.equal(translationSettings.response.status, 200, JSON.stringify(translationSettings.body));
   assert.equal(translationSettings.body.settings.api_key_configured, true);
+  assert.equal(translationSettings.body.settings.default_target_language, "zh-CN");
+  assert.equal(translationSettings.body.settings.auto_translate_english_on_open, true);
 
   const translated = await request(baseUrl, "/api/translate", {
     method: "POST",
@@ -341,6 +369,26 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
   assert.equal(translated.body.text, "你好，Submail！");
   assert(providerRequests.some((item) => item.url === "/v1/chat/completions" && item.authorization === "Bearer secret-provider-key"));
   assert(providerRequests.some((item) => item.url === "/translate" && item.authorization === "Bearer translation-provider-key"));
+
+  const libreTranslationSettings = await request(baseUrl, "/api/admin/translation-settings", {
+    method: "PUT",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      enabled: true,
+      provider: "libretranslate",
+      endpoint: `${providerBaseUrl}/translate`,
+      defaultTargetLanguage: "zh-TW",
+      autoTranslateEnglishOnOpen: true
+    })
+  });
+  assert.equal(libreTranslationSettings.response.status, 200, JSON.stringify(libreTranslationSettings.body));
+  const libreTranslated = await request(baseUrl, "/api/translate", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({ text: "Hello from Submail.", sourceLanguage: "en-US" })
+  });
+  assert.equal(libreTranslated.response.status, 200, JSON.stringify(libreTranslated.body));
+  assert(providerRequests.some((item) => item.url === "/translate" && item.body.source === "en" && item.body.target === "zt"));
 
   const createdKey = await request(baseUrl, "/api/admin/api-keys", {
     method: "POST",
@@ -492,8 +540,8 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     sent.body.messageId,
     "Re: idempotency test",
     JSON.stringify(["sender@example.com"]),
-    "reply body",
-    "reply body",
+    "Please review the attached proposal and let us know if you have any questions before our meeting tomorrow.",
+    "Please review the attached proposal and let us know if you have any questions before our meeting tomorrow.",
     new Date().toISOString(),
     new Date().toISOString(),
     new Date().toISOString()
@@ -597,6 +645,13 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
   assert.equal(threadView.response.status, 200, JSON.stringify(threadView.body));
   assert.equal(threadView.body.messages.some((message) => message.id === threadMessageId), true);
   assert.equal(threadView.body.messages.some((message) => message.id === fallbackThreadMessageId), true);
+
+  const englishMessageDetail = await request(baseUrl, `/api/messages/${threadMessageId}`, { headers: adminHeaders });
+  assert.equal(englishMessageDetail.response.status, 200, JSON.stringify(englishMessageDetail.body));
+  assert.equal(englishMessageDetail.body.detectedLanguage, "en");
+  const shortMessageDetail = await request(baseUrl, `/api/messages/${sent.body.message.id}`, { headers: adminHeaders });
+  assert.equal(shortMessageDetail.response.status, 200, JSON.stringify(shortMessageDetail.body));
+  assert.equal(shortMessageDetail.body.detectedLanguage, "unknown");
 
   const attachmentPreview = await request(baseUrl, `/api/attachments/${attachmentId}/preview`, { headers: adminHeaders });
   assert.equal(attachmentPreview.response.status, 200, JSON.stringify(attachmentPreview.body));

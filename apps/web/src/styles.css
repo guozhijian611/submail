@@ -2696,6 +2696,21 @@ select {
   flex-wrap: wrap;
 }
 
+.translationPrivacyHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: -4px 0 0;
+  color: #6b5a3e;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.translationPrivacyHint svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 .integrationNotice {
   grid-column: 1 / -1;
   color: #285d57;

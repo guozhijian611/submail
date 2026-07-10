@@ -10,6 +10,7 @@ import { testAccountConnection } from "./mail.js";
 import { dispatchAccountSync, dispatchAllSync, dispatchMail, queueHealth, type MailDeliveryResult } from "./queue.js";
 import { syncRunRepo, syncSettingsRepo } from "./repositories.js";
 import { aiService, integrationSettingsRepo, translationService } from "./integrations.js";
+import { canonicalLanguageTag, detectEnglishText } from "./language.js";
 import { config } from "./config.js";
 import { db } from "./db.js";
 import { normalizeMailboxHost } from "./account-input.js";
@@ -197,7 +198,16 @@ const updateTranslationSettingsSchema = z.object({
     enabled: z.boolean(),
     provider: z.enum(["google", "libretranslate", "custom"]),
     endpoint: z.string().max(2000).default(""),
-    defaultTargetLanguage: z.string().min(2).max(32).default("zh-CN"),
+    defaultTargetLanguage: z.string().min(2).max(32).default("zh-CN").refine((value) => {
+        try {
+            canonicalLanguageTag(value);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }, "目标语言必须是有效的 BCP-47 语言标签，例如 zh-CN 或 en"),
+    autoTranslateEnglishOnOpen: z.boolean().optional(),
     apiKey: z.string().max(2000).optional(),
     clearApiKey: z.boolean().optional()
 });
@@ -216,11 +226,20 @@ const aiComposeSchema = z.object({
     recipientContext: z.string().max(2000).optional(),
     subjectHint: z.string().max(500).optional()
 });
+const bcp47LanguageSchema = z.string().min(2).max(32).transform((value, context) => {
+    try {
+        return canonicalLanguageTag(value);
+    }
+    catch {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "语言必须是有效的 BCP-47 标签，例如 zh-CN 或 en" });
+        return z.NEVER;
+    }
+});
 const translateSchema = z.object({
     messageId: z.string().min(1).optional(),
     text: z.string().min(1).max(50000).optional(),
-    sourceLanguage: z.string().max(32).optional(),
-    targetLanguage: z.string().max(32).optional()
+    sourceLanguage: z.union([z.literal("auto"), bcp47LanguageSchema]).optional(),
+    targetLanguage: bcp47LanguageSchema.optional()
 }).refine((input) => Boolean(input.messageId || input.text), {
     message: "messageId 和 text 至少填写一个"
 });
@@ -785,7 +804,12 @@ export function routes(): Router {
             res.status(403).json({ error: "API key is not allowed to access this account" });
             return;
         }
-        res.json({ message, attachments: await attachmentRepo.listForMessage(message.id) });
+        const sourceText = message.text_body || message.snippet || "";
+        res.json({
+            message,
+            attachments: await attachmentRepo.listForMessage(message.id),
+            detectedLanguage: detectEnglishText(sourceText) === "english" ? "en" : "unknown"
+        });
     }));
     router.get("/api/messages/:id/thread", asyncHandler(async (req, res) => {
         const anchor = await messageRepo.get(String(req.params.id));

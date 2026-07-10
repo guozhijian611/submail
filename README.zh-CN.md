@@ -58,7 +58,7 @@
 - **集中处理：**统一收件箱、已发送、草稿、星标、归档、垃圾箱、会话聚合、高级搜索和批量操作。
 - **附件：**同步后集中存储，浏览器仅在打开预览或下载时请求附件内容；支持 `.eml` 解析、保留策略和多种格式在线预览。
 - **AI 邮件助手：**支持 OpenAI-compatible 服务，可总结邮件、推荐回信和生成邮件；结果不会自动发送。
-- **翻译：**Google-compatible、LibreTranslate 或自定义 HTTP 服务，长邮件自动分块。
+- **翻译：**Google-compatible、LibreTranslate 或自定义 HTTP 服务，支持长邮件自动分块、默认目标语言，以及对明确英文邮件的可选自动翻译。
 - **MCP 与 API：**8 个 MCP 工具与 HTTP 发信 API 共用同一套授权与投递服务。
 - **运维：**Docker Compose 一键部署、Redis 持久化队列、健康检查、SQLite 在线备份与原子恢复。
 
@@ -164,7 +164,7 @@ curl --fail-with-body 'https://mail.example.com/api/send' \
 - 已读、星标、归档、删除等状态目前只保存在本地，不回写 IMAP。
 - 尚未支持 Gmail/Microsoft OAuth、DKIM 签名、DSN 退信和队列面板。
 - SQLite 与 MySQL 之间不会自动迁移已有数据。
-- 默认免 Key Google 翻译为 best-effort 第三方服务，不适合机密邮件或严格 SLA。
+- 默认免 Key Google 翻译为 best-effort 第三方服务，不适合机密邮件或严格 SLA。自动翻译默认关闭，因为启用后会把打开的英文邮件正文发送给所配置的翻译服务商。
 
 完整实现复盘与路线见 [docs/gap-review.md](docs/gap-review.md)。
 

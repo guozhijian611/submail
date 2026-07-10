@@ -43,6 +43,16 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 const sessionTokenKey = "submail.sessionToken";
 const invisibleHostCharacters = /[\u200B-\u200D\u2060\uFEFF]/gu;
 const FlyfishAttachmentViewer = React.lazy(() => import("./FlyfishAttachmentViewer"));
+const translationLanguageOptions = [
+  ["zh-CN", "简体中文"],
+  ["zh-TW", "繁體中文"],
+  ["en", "English"],
+  ["ja", "日本語"],
+  ["ko", "한국어"],
+  ["fr", "Français"],
+  ["de", "Deutsch"],
+  ["es", "Español"]
+] as const;
 
 function normalizeMailboxHostInput(value: unknown): string {
   return String(value ?? "").replace(invisibleHostCharacters, "").trim();
@@ -109,6 +119,7 @@ type Message = {
   text_body: string;
   html_body: string | null;
   sent_at: string | null;
+  updated_at?: string;
   is_read: number;
   is_starred: number;
   is_archived: number;
@@ -165,6 +176,7 @@ type TranslationSettings = {
   provider: TranslationProvider;
   endpoint: string;
   default_target_language: string;
+  auto_translate_english_on_open: boolean;
   api_key_configured: boolean;
   updated_at: string | null;
 };
@@ -1623,7 +1635,24 @@ function Inspector({
               {state.translationSettings.provider !== "google" && (
                 <label>接口地址<input value={state.translationSettings.endpoint} onChange={(event) => setState({ translationSettings: { ...state.translationSettings!, endpoint: event.target.value } })} placeholder="https://translate.example.com/translate" /></label>
               )}
-              <label>默认目标语言<input value={state.translationSettings.default_target_language} onChange={(event) => setState({ translationSettings: { ...state.translationSettings!, default_target_language: event.target.value } })} placeholder="zh-CN" /></label>
+              <label>默认目标语言
+                <select value={state.translationSettings.default_target_language} onChange={(event) => setState({ translationSettings: { ...state.translationSettings!, default_target_language: event.target.value } })}>
+                  {!translationLanguageOptions.some(([value]) => value === state.translationSettings!.default_target_language) ? (
+                    <option value={state.translationSettings.default_target_language}>{state.translationSettings.default_target_language}</option>
+                  ) : null}
+                  {translationLanguageOptions.map(([value, label]) => <option key={value} value={value}>{label} · {value}</option>)}
+                </select>
+              </label>
+              <label className="switchLine">
+                <input
+                  type="checkbox"
+                  disabled={!state.translationSettings.enabled}
+                  checked={state.translationSettings.auto_translate_english_on_open}
+                  onChange={(event) => setState({ translationSettings: { ...state.translationSettings!, auto_translate_english_on_open: event.target.checked } })}
+                />
+                <span>打开明确识别为英文的邮件时自动翻译</span>
+              </label>
+              <p className="translationPrivacyHint"><ShieldCheck size={15} /> 自动翻译会把邮件正文发送给当前翻译服务商；默认关闭，原文始终先显示。</p>
               {state.translationSettings.provider !== "google" && (
                 <label>API Key<input type="password" autoComplete="off" value={state.translationApiKeyInput} onChange={(event) => setState({ translationApiKeyInput: event.target.value, clearTranslationApiKey: false })} placeholder={state.translationSettings.api_key_configured ? "已保存，留空则不修改" : "可选 API Key"} /></label>
               )}
@@ -2616,6 +2645,15 @@ function ResetAdminPasswordDialog({ admin, onClose, onChanged }: { admin: Admin;
   );
 }
 
+function textFingerprint(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
 function App() {
   const [state, rawSetState] = React.useState<State>({
     authChecked: false,
@@ -2676,6 +2714,9 @@ function App() {
   latestStateRef.current = state;
   const loadRequestId = React.useRef(0);
   const messageSelectionRequestId = React.useRef(0);
+  const assistantRequestId = React.useRef(0);
+  const activeTranslationSettingsRef = React.useRef<TranslationSettings | undefined>(undefined);
+  const translationCache = React.useRef(new Map<string, string>());
 
   const setState = (value: Partial<State>) => rawSetState((previous) => ({ ...previous, ...value }));
 
@@ -2750,6 +2791,7 @@ function App() {
       ? messageData.messages.find((message) => message.id === effectiveState.selectedMessage?.id)
       : undefined;
     if (requestId !== loadRequestId.current) return;
+    activeTranslationSettingsRef.current = translationSettingsData.settings;
     setState({
       accounts: accountData.accounts,
       messages: messageData.messages,
@@ -2944,6 +2986,7 @@ function App() {
   }
 
   async function runAssistantAction(message: Message, kind: AssistantResult["kind"]) {
+    const requestId = ++assistantRequestId.current;
     const labels = {
       summary: { busy: "AI 正在总结邮件", title: "AI 邮件总结", path: "/api/ai/summarize" },
       reply: { busy: "AI 正在生成推荐回信", title: "AI 推荐回信", path: "/api/ai/reply" },
@@ -2959,9 +3002,62 @@ function App() {
           ...(kind === "translation" ? { targetLanguage: state.translationSettings?.default_target_language ?? "zh-CN" } : {})
         })
       });
+      if (requestId !== assistantRequestId.current) return;
       setState({ assistantBusy: undefined, assistantResult: { kind, messageId: message.id, title: action.title, text: result.text } });
     } catch (error) {
+      if (requestId !== assistantRequestId.current) return;
       setState({ assistantBusy: undefined, assistantError: error instanceof Error ? error.message : "邮件助手处理失败" });
+    }
+  }
+
+  async function maybeAutoTranslate(
+    message: Message,
+    detectedLanguage: "en" | "unknown",
+    selectionRequestId: number,
+    assistantBaseline: number
+  ) {
+    const settings = activeTranslationSettingsRef.current;
+    const targetLanguage = settings?.default_target_language ?? "zh-CN";
+    if (!settings?.enabled
+      || !settings.auto_translate_english_on_open
+      || detectedLanguage !== "en"
+      || /^en(?:-|$)/iu.test(targetLanguage)
+      || assistantRequestId.current !== assistantBaseline) return;
+    const content = message.text_body || message.html_body || message.snippet || "";
+    const cacheKey = [
+      message.id,
+      textFingerprint(content),
+      targetLanguage,
+      settings.provider,
+      settings.endpoint,
+      settings.updated_at
+    ].join(":");
+    const title = `自动译文（${targetLanguage}）`;
+    const cached = translationCache.current.get(cacheKey);
+    if (cached) {
+      if (selectionRequestId === messageSelectionRequestId.current && assistantRequestId.current === assistantBaseline)
+        setState({ assistantBusy: undefined, assistantError: undefined, assistantResult: { kind: "translation", messageId: message.id, title, text: cached } });
+      return;
+    }
+    if (selectionRequestId !== messageSelectionRequestId.current || assistantRequestId.current !== assistantBaseline) return;
+    const requestId = ++assistantRequestId.current;
+    setState({ assistantBusy: "正在自动翻译英文邮件", assistantError: undefined, assistantResult: undefined });
+    try {
+      const result = await api<{ text: string }>("/api/translate", {
+        method: "POST",
+        body: JSON.stringify({ messageId: message.id, sourceLanguage: "en", targetLanguage })
+      });
+      if (requestId !== assistantRequestId.current || selectionRequestId !== messageSelectionRequestId.current) return;
+      if (translationCache.current.size >= 100) {
+        const oldestKey = translationCache.current.keys().next().value;
+        if (oldestKey) translationCache.current.delete(oldestKey);
+      }
+      translationCache.current.set(cacheKey, result.text);
+      setState({ assistantBusy: undefined, assistantError: undefined, assistantResult: { kind: "translation", messageId: message.id, title, text: result.text } });
+    } catch (error) {
+      if (requestId !== assistantRequestId.current || selectionRequestId !== messageSelectionRequestId.current) return;
+      const errorMessage = error instanceof Error ? error.message : "翻译服务不可用";
+      setState({ assistantBusy: undefined, assistantError: `自动翻译失败：${errorMessage}` });
     }
   }
 
@@ -3028,10 +3124,13 @@ function App() {
           provider: state.translationSettings.provider,
           endpoint: state.translationSettings.provider === "google" ? "" : state.translationSettings.endpoint,
           defaultTargetLanguage: state.translationSettings.default_target_language,
+          autoTranslateEnglishOnOpen: state.translationSettings.auto_translate_english_on_open,
           ...(state.translationApiKeyInput.trim() ? { apiKey: state.translationApiKeyInput.trim() } : {}),
           ...(state.clearTranslationApiKey ? { clearApiKey: true } : {})
         })
       });
+      activeTranslationSettingsRef.current = result.settings;
+      translationCache.current.clear();
       setState({
         translationSettings: result.settings,
         translationApiKeyInput: "",
@@ -3156,6 +3255,8 @@ function App() {
 
   async function selectMessage(message: Message) {
     const requestId = ++messageSelectionRequestId.current;
+    assistantRequestId.current += 1;
+    const autoTranslationBaseline = assistantRequestId.current;
     // Open the list payload immediately so a secondary thread/read-state
     // request can never make the row appear unresponsive.
     setState({
@@ -3163,10 +3264,11 @@ function App() {
       selectedThreadMessages: [message],
       selectedAttachments: [],
       busyText: "正在打开邮件…",
+      assistantBusy: undefined,
       assistantError: undefined,
       assistantResult: undefined
     });
-    const detailPromise = api<{ message: Message; attachments: Attachment[] }>(`/api/messages/${encodeURIComponent(message.id)}`);
+    const detailPromise = api<{ message: Message; attachments: Attachment[]; detectedLanguage?: "en" | "unknown" }>(`/api/messages/${encodeURIComponent(message.id)}`);
     const threadPromise = api<{ messages: Message[] }>(`/api/messages/${encodeURIComponent(message.id)}/thread`);
     const readStatePromise = message.is_read
       ? Promise.resolve(undefined)
@@ -3205,6 +3307,7 @@ function App() {
         selectedAttachments: detail.attachments,
         busyText: undefined
       });
+      void maybeAutoTranslate(detail.message, detail.detectedLanguage ?? "unknown", requestId, autoTranslationBaseline);
 
       const [threadResult, readStateResult] = await secondaryRequests;
       if (requestId !== messageSelectionRequestId.current) return;

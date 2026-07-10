@@ -49,7 +49,7 @@
 - **Unified workflow:** Inbox, sent, drafts, starred, archived, trash, conversation threading, advanced search, and bulk actions.
 - **Attachments:** Centralized storage after sync, on-demand browser retrieval, `.eml` parsing, retention settings, and broad in-browser preview support.
 - **AI assistance:** OpenAI-compatible providers for summaries, suggested replies, and email composition. Generated content is placed in the editor and is never sent automatically.
-- **Translation:** Google-compatible, LibreTranslate, or custom HTTP providers with long-message chunking.
+- **Translation:** Google-compatible, LibreTranslate, or custom HTTP providers with long-message chunking, a configurable default language, and opt-in automatic translation for clearly detected English email.
 - **MCP and API:** Eight MCP tools plus a direct send endpoint, sharing the same authorization and delivery service.
 - **Operations:** Health checks, least-privilege containers, durable Redis queues, audit retention, SQLite online backup, and atomic restore.
 
@@ -204,7 +204,7 @@ flowchart LR
 - Read, star, archive, and delete state is currently local and is not written back to IMAP.
 - Gmail and Microsoft OAuth, DKIM signing, DSN bounce processing, and a queue dashboard are not implemented yet.
 - SQLite and MySQL data are not automatically migrated between drivers.
-- The default free Google translation path is best-effort and is not appropriate for confidential email or strict SLAs.
+- The default free Google translation path is best-effort and is not appropriate for confidential email or strict SLAs. Automatic translation is disabled by default because enabling it sends opened English email content to the configured provider.
 
 The detailed implementation review and roadmap live in [docs/gap-review.md](docs/gap-review.md).
 

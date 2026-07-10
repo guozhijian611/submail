@@ -1,5 +1,6 @@
 import { decryptSecret, encryptSecret } from "./crypto.js";
 import { db, nowIso } from "./db.js";
+import { canonicalLanguageTag, normalizeLibreLanguageCode } from "./language.js";
 import type { MessageRecord } from "./types.js";
 const GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single";
 const AI_SAFETY_PROMPT = [
@@ -23,6 +24,7 @@ export type TranslationSettings = {
     provider: TranslationProvider;
     endpoint: string;
     default_target_language: string;
+    auto_translate_english_on_open: boolean;
     api_key_configured: boolean;
     updated_at: string | null;
 };
@@ -111,8 +113,17 @@ function defaultStoredTranslationSettings(): StoredTranslationSettings {
         enabled: true,
         provider: "google",
         endpoint: "",
-        default_target_language: "zh-CN"
+        default_target_language: "zh-CN",
+        auto_translate_english_on_open: false
     };
+}
+function safeCanonicalLanguageTag(value: string | undefined, fallback = "zh-CN"): string {
+    try {
+        return canonicalLanguageTag(value || fallback);
+    }
+    catch {
+        return fallback;
+    }
 }
 function publicAiSettings(stored: StoredAiSettings, updatedAt: string | null): AiSettings {
     return {
@@ -130,7 +141,8 @@ function publicTranslationSettings(stored: StoredTranslationSettings, updatedAt:
         enabled: stored.enabled !== false,
         provider: stored.provider || "google",
         endpoint: stored.endpoint || "",
-        default_target_language: stored.default_target_language || "zh-CN",
+        default_target_language: safeCanonicalLanguageTag(stored.default_target_language),
+        auto_translate_english_on_open: Boolean(stored.auto_translate_english_on_open),
         api_key_configured: Boolean(stored.api_key_cipher),
         updated_at: updatedAt
     };
@@ -190,6 +202,7 @@ export const integrationSettingsRepo = {
         provider: TranslationProvider;
         endpoint: string;
         defaultTargetLanguage: string;
+        autoTranslateEnglishOnOpen?: boolean;
         apiKey?: string;
         clearApiKey?: boolean;
     }) {
@@ -199,7 +212,10 @@ export const integrationSettingsRepo = {
             enabled: input.enabled,
             provider: input.provider,
             endpoint: input.endpoint ? normalizeEndpoint(input.endpoint) : "",
-            default_target_language: input.defaultTargetLanguage.trim() || "zh-CN",
+            default_target_language: canonicalLanguageTag(input.defaultTargetLanguage.trim() || "zh-CN"),
+            auto_translate_english_on_open: input.autoTranslateEnglishOnOpen
+                ?? existing.auto_translate_english_on_open
+                ?? false,
             ...(input.clearApiKey
                 ? {}
                 : apiKey
@@ -446,8 +462,8 @@ async function translateChunk(text: string, sourceLanguage: string, targetLangua
     const body = settings.provider === "libretranslate"
         ? {
             q: text,
-            source: sourceLanguage || "auto",
-            target: targetLanguage,
+            source: !sourceLanguage || sourceLanguage === "auto" ? "auto" : normalizeLibreLanguageCode(sourceLanguage),
+            target: normalizeLibreLanguageCode(targetLanguage),
             format: "text",
             ...(settings.api_key ? { api_key: settings.api_key } : {})
         }
@@ -491,8 +507,9 @@ export const translationService = {
         const settings = await integrationSettingsRepo.getTranslationRuntime();
         if (!settings.enabled)
             throw new Error("翻译功能尚未启用");
-        const sourceLanguage = input.sourceLanguage?.trim() || "auto";
-        const targetLanguage = input.targetLanguage?.trim() || settings.default_target_language || "zh-CN";
+        const sourceInput = input.sourceLanguage?.trim() || "auto";
+        const sourceLanguage = sourceInput === "auto" ? "auto" : canonicalLanguageTag(sourceInput);
+        const targetLanguage = canonicalLanguageTag(input.targetLanguage?.trim() || settings.default_target_language || "zh-CN");
         const source = text.trim();
         if (!source)
             throw new Error("没有可翻译的文本");
