@@ -942,6 +942,7 @@ function MessageList({
   onSelectMessage,
   onToggleSelection,
   onTogglePageSelection,
+  onMarkAllRead,
   onBulkRead,
   onBulkDelete,
   onPageChange
@@ -950,6 +951,7 @@ function MessageList({
   onSelectMessage: (message: Message) => void;
   onToggleSelection: (id: string) => void;
   onTogglePageSelection: () => void;
+  onMarkAllRead: () => void;
   onBulkRead: () => void;
   onBulkDelete: () => void;
   onPageChange: (page: number) => void;
@@ -964,6 +966,7 @@ function MessageList({
   const visibleCount = Math.ceil(viewportHeight / virtualMessageRowHeight) + virtualMessageOverscan * 2;
   const lastVisibleIndex = Math.min(state.messages.length, firstVisibleIndex + visibleCount);
   const visibleMessages = state.messages.slice(firstVisibleIndex, lastVisibleIndex);
+  const markingAllRead = state.operationNotice?.key === "mark-all-inbox-read" && state.operationNotice.tone === "loading";
 
   React.useEffect(() => {
     const viewport = viewportRef.current;
@@ -995,6 +998,11 @@ function MessageList({
           全选本页
         </label>
         <span>已选 {state.selectedMessageIds.length} 封</span>
+        {state.activeFolder === "INBOX" ? (
+          <button className="toolbarButton" disabled={state.inboxUnreadCount === 0 || markingAllRead} onClick={onMarkAllRead}>
+            <MailOpen size={15} /> {markingAllRead ? "正在全部标记…" : "收件箱全部已读"}
+          </button>
+        ) : null}
         <button className="toolbarButton" disabled={state.selectedMessageIds.length === 0} onClick={onBulkRead}>
           <MailOpen size={15} /> 批量已读
         </button>
@@ -2664,6 +2672,8 @@ function App() {
     mcpKeyExpiresAt: "",
     mcpKeyDailySendLimit: 100
   });
+  const latestStateRef = React.useRef(state);
+  latestStateRef.current = state;
   const loadRequestId = React.useRef(0);
   const messageSelectionRequestId = React.useRef(0);
 
@@ -2845,6 +2855,58 @@ function App() {
     const next = movesCurrentPage ? clearMessageSelection(patch) : patch;
     if (!movesCurrentPage) setState(next);
     await load(next);
+  }
+
+  async function markAllInboxRead() {
+    const key = "mark-all-inbox-read";
+    const account = state.accounts.find((item) => item.id === state.selectedAccountId);
+    const scopeLabel = account?.display_name ?? "全部账号";
+    setState({
+      busyText: "正在标记收件箱全部邮件为已读",
+      operationNotice: { key, message: `正在将${scopeLabel}的收件箱全部标记为已读…`, tone: "loading" }
+    });
+    try {
+      const scopeAccountId = state.selectedAccountId;
+      const result = await api<{ updated: number }>("/api/admin/messages/mark-all-read", {
+        method: "POST",
+        body: JSON.stringify(scopeAccountId ? { accountId: scopeAccountId } : {})
+      });
+      const currentState = latestStateRef.current;
+      if (currentState.selectedAccountId === scopeAccountId && currentState.activeFolder === "INBOX") {
+        const selectedMessage = currentState.selectedMessage?.folder === "INBOX"
+          && !currentState.selectedMessage.is_archived
+          && !currentState.selectedMessage.is_deleted
+          ? { ...currentState.selectedMessage, is_read: 1 }
+          : currentState.selectedMessage;
+        await load({
+          activeFolder: currentState.activeFolder,
+          selectedAccountId: currentState.selectedAccountId,
+          query: currentState.query,
+          searchSender: currentState.searchSender,
+          searchDateFrom: currentState.searchDateFrom,
+          searchDateTo: currentState.searchDateTo,
+          searchHasAttachment: currentState.searchHasAttachment,
+          messagePage: currentState.messagePage,
+          selectedMessage,
+          selectedThreadMessages: currentState.selectedThreadMessages.map((message) => message.folder === "INBOX"
+            && !message.is_archived
+            && !message.is_deleted
+            ? { ...message, is_read: 1 }
+            : message),
+          selectedMessageIds: []
+        });
+      }
+      const message = result.updated > 0
+        ? `已将${scopeLabel}收件箱中的 ${result.updated} 封邮件标记为已读`
+        : `${scopeLabel}收件箱已全部是已读状态`;
+      setState({
+        busyText: message,
+        operationNotice: { key, message, tone: "success" }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "全部标记已读失败";
+      setState({ busyText: message, operationNotice: { key, message: `全部标记已读失败：${message}`, tone: "error" } });
+    }
   }
 
   async function bootstrapAuth() {
@@ -3475,6 +3537,7 @@ function App() {
               onSelectMessage={selectMessage}
               onToggleSelection={toggleMessageSelection}
               onTogglePageSelection={togglePageSelection}
+              onMarkAllRead={markAllInboxRead}
               onBulkRead={() => bulkUpdateSelected({ isRead: true })}
               onBulkDelete={() => bulkUpdateSelected({ isDeleted: state.activeFolder !== "TRASH" })}
               onPageChange={changeMessagePage}

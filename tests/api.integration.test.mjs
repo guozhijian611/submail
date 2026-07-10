@@ -517,6 +517,34 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     new Date().toISOString(),
     new Date().toISOString()
   );
+  const secondMarkReadAccountId = "mark-read-second-account";
+  const markReadNow = new Date().toISOString();
+  directDb.prepare(`
+    INSERT INTO accounts (
+      id, email, display_name, username, password_cipher, imap_host, imap_port, imap_secure,
+      smtp_host, smtp_port, smtp_secure, created_at, updated_at
+    ) VALUES (?, 'second@example.com', 'Second', 'second@example.com', 'not-used', 'imap.invalid', 993, 1,
+      'smtp.invalid', 465, 1, ?, ?)
+  `).run(secondMarkReadAccountId, markReadNow, markReadNow);
+  const insertUnreadInbox = directDb.prepare(`
+    INSERT INTO messages (
+      id, account_id, folder, subject, recipients, snippet, text_body, flags,
+      is_read, is_starred, is_archived, is_deleted, created_at, updated_at
+    ) VALUES (?, ?, 'INBOX', ?, '[]', 'unread', 'unread', '[]', 0, 0, 0, 0, ?, ?)
+  `);
+  directDb.transaction(() => {
+    for (let index = 0; index < 125; index += 1) {
+      insertUnreadInbox.run(`mark-read-primary-${index}`, accountId, `Primary unread ${index}`, markReadNow, markReadNow);
+    }
+    for (let index = 0; index < 3; index += 1) {
+      insertUnreadInbox.run(`mark-read-secondary-${index}`, secondMarkReadAccountId, `Secondary unread ${index}`, markReadNow, markReadNow);
+    }
+  })();
+  const firstAccountUnreadBeforeMarkAll = directDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND folder = 'INBOX' AND is_read = 0 AND is_archived = 0 AND is_deleted = 0
+  `).get(accountId).count;
+  assert(firstAccountUnreadBeforeMarkAll > 100);
   directDb.close();
 
   const remoteDraftDelete = await request(baseUrl, `/api/drafts/${remoteDraftId}`, { method: "DELETE", headers: adminHeaders });
@@ -527,6 +555,43 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     body: JSON.stringify({ isArchived: false })
   });
   assert.equal(remoteArchiveRestore.response.status, 409, JSON.stringify(remoteArchiveRestore.body));
+
+  const apiKeyCannotMarkAllRead = await request(baseUrl, "/api/admin/messages/mark-all-read", {
+    method: "POST",
+    headers: { "x-submail-api-key": apiKey },
+    body: JSON.stringify({ accountId })
+  });
+  assert.equal(apiKeyCannotMarkAllRead.response.status, 403, JSON.stringify(apiKeyCannotMarkAllRead.body));
+  const markAllRead = await request(baseUrl, "/api/admin/messages/mark-all-read", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({ accountId })
+  });
+  assert.equal(markAllRead.response.status, 200, JSON.stringify(markAllRead.body));
+  assert.equal(markAllRead.body.updated, firstAccountUnreadBeforeMarkAll);
+  assert.equal(markAllRead.body.unreadTotal, 0);
+  const markAllReadCheckDb = new Database(databasePath, { readonly: true });
+  assert.equal(markAllReadCheckDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND folder = 'INBOX' AND is_read = 0 AND is_archived = 0 AND is_deleted = 0
+  `).get(accountId).count, 0);
+  assert.equal(markAllReadCheckDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND folder = 'INBOX' AND is_read = 0 AND is_archived = 0 AND is_deleted = 0
+  `).get(secondMarkReadAccountId).count, 3);
+  assert.equal(
+    JSON.parse(markAllReadCheckDb.prepare("SELECT local_state_overrides FROM messages WHERE id = 'mark-read-primary-0'").get().local_state_overrides).isRead,
+    true
+  );
+  markAllReadCheckDb.close();
+  const markAllAccountsRead = await request(baseUrl, "/api/admin/messages/mark-all-read", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({})
+  });
+  assert.equal(markAllAccountsRead.response.status, 200, JSON.stringify(markAllAccountsRead.body));
+  assert.equal(markAllAccountsRead.body.updated, 3);
+  assert.equal(markAllAccountsRead.body.unreadTotal, 0);
 
   const threadView = await request(baseUrl, `/api/messages/${sent.body.message.id}/thread`, { headers: adminHeaders });
   assert.equal(threadView.response.status, 200, JSON.stringify(threadView.body));

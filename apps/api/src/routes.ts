@@ -143,6 +143,9 @@ const bulkUpdateMessageStateSchema = z.object({
         message: "至少提供一个状态变更"
     })
 });
+const markAllInboxReadSchema = z.object({
+    accountId: z.string().min(1).optional()
+});
 const savedSearchCriteriaSchema = z.object({
     query: z.string().default(""),
     sender: z.string().default(""),
@@ -852,6 +855,16 @@ export function routes(): Router {
     router.post("/api/admin/attachments/cleanup", asyncHandler(async (_req, res) => {
         const settings = await appSettingsRepo.getAttachmentSettings();
         res.json({ deleted: await attachmentRepo.cleanupExpired(settings.retention_days) });
+    }));
+    router.post("/api/admin/messages/mark-all-read", asyncHandler(async (req, res) => {
+        const input = markAllInboxReadSchema.parse(req.body ?? {});
+        if (input.accountId && !await accountRepo.get(input.accountId)) {
+            res.status(404).json({ error: "Account not found" });
+            return;
+        }
+        const updated = await messageRepo.markAllInboxRead({ accountId: input.accountId });
+        const unreadTotal = await messageRepo.countUnreadInbox({ accountId: input.accountId });
+        res.json({ updated, unreadTotal });
     }));
     router.post("/api/messages/:id/read", asyncHandler(async (req, res) => {
         await messageRepo.markRead(String(req.params.id), Boolean(req.body?.isRead ?? true));

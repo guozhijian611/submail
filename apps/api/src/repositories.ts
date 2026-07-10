@@ -1177,6 +1177,25 @@ export const messageRepo = {
         const row = await db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE ${clauses.join(" AND ")}`).get(...values) as { count: number };
         return Number(row.count);
     },
+    async markAllInboxRead(params: { accountId?: string }) {
+        const clauses = ["folder = 'INBOX'", "is_archived = 0", "is_deleted = 0", "is_read = 0"];
+        const values: unknown[] = [nowIso()];
+        if (params.accountId) {
+            clauses.push("account_id = ?");
+            values.push(params.accountId);
+        }
+        const overrideExpression = config.dbDriver === "mysql"
+            ? "JSON_SET(CASE WHEN JSON_VALID(local_state_overrides) THEN local_state_overrides ELSE JSON_OBJECT() END, '$.isRead', TRUE)"
+            : "json_set(CASE WHEN json_valid(local_state_overrides) THEN local_state_overrides ELSE '{}' END, '$.isRead', json('true'))";
+        const result = await db.prepare(`
+      UPDATE messages SET
+        is_read = 1,
+        local_state_overrides = ${overrideExpression},
+        updated_at = ?
+      WHERE ${clauses.join(" AND ")}
+    `).run(...values);
+        return result.changes;
+    },
     async get(id: string) {
         return await db.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRecord | undefined;
     },
