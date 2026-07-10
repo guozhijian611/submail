@@ -1,55 +1,96 @@
 <p align="center">
-  <img src="apps/web/public/submail-logo.png" alt="Submail Logo" width="112" height="112">
+  <img src="apps/web/public/submail-logo.png" alt="Submail logo" width="112" height="112">
 </p>
 
 <h1 align="center">Submail</h1>
 
-<p align="center"><strong>自托管的多邮箱聚合工作台，同时提供 AI 邮件助手、MCP 和 HTTP 发信 API。</strong></p>
+<p align="center"><strong>A self-hosted unified inbox for humans and AI agents.</strong></p>
 
-Submail 面向单实例自托管场景：通过 IMAP 或 POP3 集中收取邮件，通过已添加邮箱的 SMTP 发信，并向外部 AI / Agent 提供带细粒度权限控制的远程 MCP 能力。
+<p align="center">Connect the mailboxes you already use, manage them from one Web UI, and expose carefully scoped email tools through MCP and HTTP.</p>
 
-数据层支持 SQLite、Docker Compose 内置 MySQL 和外部 MySQL；Docker 部署使用 Redis + BullMQ 承载同步与 SMTP 发送任务。本机开发默认使用 SQLite + 内存队列，不启动容器也能调试。
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-[功能](#已有能力) · [架构](#系统架构) · [快速开始](#快速开始) · [Docker 部署](#docker-一键部署) · [MCP](#mcp) · [HTTP API](#http-发信-api) · [安全边界](#数据和安全边界)
+<p align="center">
+  <a href="https://github.com/guozhijian611/submail/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/guozhijian611/submail/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Node.js 22+" src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white">
+  <img alt="Docker Compose" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
+  <img alt="Model Context Protocol" src="https://img.shields.io/badge/MCP-Streamable_HTTP-5A45FF">
+</p>
 
-## 已有能力
+<p align="center">
+  <a href="#why-submail">Why Submail</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#mcp-and-send-api">MCP & API</a> ·
+  <a href="#security-model">Security</a>
+</p>
 
-- 多邮箱管理：新增、编辑、删除、备注、IMAP/POP3/SMTP 连接测试；按邮箱后缀识别 Gmail、Outlook、QQ、网易、iCloud、Yahoo、Zoho 等常见服务商并提供推荐参数；邮箱密码使用 AES-GCM 加密保存；同一真实邮箱可维护多个自有地址/发信身份，别名通过一次性验证码确认后才可用于 Send As。
-- 邮件同步：IMAP 使用 UID 增量同步 INBOX 与服务器“已发送”目录；POP3 使用 UIDL 增量去重、只读收件箱且不删除服务器邮件；支持首次同步数量、定时任务、失败重试、并发限制和同步日志。同步记录支持分页、手动删除和按保留天数自动清理。已读、归档等状态保存在 Submail 本地，不反向修改邮箱服务器。
-- 集中处理：统一收件箱、独立邮件对话模式、收发件人信息、草稿、回复/转发、星标、归档、垃圾箱和批量处理；对话优先按 Message-ID / In-Reply-To / References 聚合，再以同一联系人和规范化主题兜底，不依赖邮箱别名。桌面端账号栏、邮件列表和长正文分别滚动。
-- 附件管理：使用 Flyfish File Viewer 全量预览 Office、PDF、压缩包、邮件等常见格式；附件只在手动点击时下载，原始 `.eml` 邮件会在正文下方自动解析，并支持分页和按天自动删除。
-- 邮件发送：文本、HTML、CC/BCC、附件和线程头；成功后写入本地 Sent，并支持 Idempotency-Key 防止重复投递。
-- AI：配置任意 OpenAI-compatible `chat/completions` 服务，支持邮件总结、推荐回信和邮件生成；AI 生成内容只进入编辑器，不会自动发送。
-- 翻译：默认提供免 Key 的 Google 翻译兼容接口，也可选择 LibreTranslate 或自定义 HTTP 服务；长邮件会完整分块翻译。
-- MCP 与 API：stdio、远程 Streamable HTTP MCP 和 HTTP 发信 API 共用一套 Key；可限制 scope、邮箱账号、有效期和每日发信量。
-- 运维：Docker Compose 一键部署、Redis 持久化队列、SQLite/内置 MySQL/外部 MySQL、健康检查、最小权限容器、SQLite 在线备份/原子恢复和日志保留策略。
+![Submail unified inbox](docs/images/submail-inbox.jpg)
 
-## 系统架构
+> [!NOTE]
+> Submail is not a mail server and does not replace Gmail, Outlook, QQ Mail, or your existing provider. It connects existing IMAP/POP3 mailboxes, sends through their SMTP servers, and gives people and agents one controlled workspace.
 
-```mermaid
-flowchart LR
-  Browser["浏览器"] --> Web["React + Vite / Nginx"]
-  Agent["AI / MCP 客户端"] --> MCP["MCP Server"]
-  Web --> API["Express API"]
-  MCP --> API
-  API --> DB["SQLite / MySQL"]
-  API --> Queue["Memory / Redis + BullMQ"]
-  API --> Mail["IMAP / POP3 / SMTP"]
-  API --> Services["AI 与翻译服务"]
+## Why Submail
+
+| | |
+| --- | --- |
+| **One inbox, many accounts** | Search, read, reply, forward, star, archive, delete, and manage attachments across multiple mailboxes. |
+| **Built for agents** | Use local stdio MCP, remote Streamable HTTP MCP, or a direct HTTP send API without maintaining separate integrations. |
+| **Permissioned by default** | Scope every key by capability, mailbox, expiry time, and daily send quota. New keys start with read-only permissions. |
+| **Your data, your deployment** | Run locally with SQLite or deploy with Docker, Redis/BullMQ, and SQLite or MySQL. |
+
+## Features
+
+- **Mail accounts:** IMAP or POP3 receive, SMTP send, connection tests, provider presets, app-password guidance, and verified Send As aliases.
+- **Incremental sync:** IMAP UID and POP3 UIDL cursors, scheduled jobs, bounded retries, concurrency limits, and sync history.
+- **Unified workflow:** Inbox, sent, drafts, starred, archived, trash, conversation threading, advanced search, and bulk actions.
+- **Attachments:** Centralized storage after sync, on-demand browser retrieval, `.eml` parsing, retention settings, and broad in-browser preview support.
+- **AI assistance:** OpenAI-compatible providers for summaries, suggested replies, and email composition. Generated content is placed in the editor and is never sent automatically.
+- **Translation:** Google-compatible, LibreTranslate, or custom HTTP providers with long-message chunking.
+- **MCP and API:** Eight MCP tools plus a direct send endpoint, sharing the same authorization and delivery service.
+- **Operations:** Health checks, least-privilege containers, durable Redis queues, audit retention, SQLite online backup, and atomic restore.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/submail-mcp-access.jpg" alt="MCP scopes and API access settings">
+      <br><strong>MCP and API access</strong><br>Account scopes, capability scopes, expiry, and daily send limits.
+    </td>
+    <td width="50%">
+      <img src="docs/images/submail-compose.jpg" alt="AI-assisted email composer">
+      <br><strong>AI-assisted composer</strong><br>Draft with AI, review the result, then decide whether to send.
+    </td>
+  </tr>
+</table>
+
+All screenshots use a temporary SQLite database and synthetic `.local` addresses. No production mailbox data is included.
+
+## Quick start
+
+### Docker deployment
+
+Install Docker Engine with the Compose plugin, then run:
+
+```bash
+git clone https://github.com/guozhijian611/submail.git
+cd submail
+./deploy.sh
 ```
 
-| 模块 | 技术与职责 |
-| --- | --- |
-| Web | React 19、Vite 6、TypeScript；邮件管理、设置后台与附件预览 |
-| API | Node.js、Express、Knex；认证、邮件同步/发送、AI、翻译与备份恢复 |
-| 邮件 | ImapFlow、node-pop3、Nodemailer 和 Mailparser |
-| 数据 | SQLite WAL / FTS5，或 MySQL 8 |
-| 队列 | 本地开发使用内存队列；Docker 使用 Redis + BullMQ |
-| MCP | 官方 MCP SDK，支持 stdio 与 Streamable HTTP |
+The setup script lets you choose SQLite, bundled MySQL, or external MySQL. It generates secrets, starts Redis and all services, builds the images, and waits for health checks.
 
-## 快速开始
+The gateway binds to `127.0.0.1:8080` by default. Put Caddy, Nginx, Traefik, or a load balancer with HTTPS in front of it before exposing Submail to the internet.
 
-需要 Node.js 22+：
+See the full [deployment and operations guide](docs/deployment.md) for first-admin setup, database modes, backup/restore, and upgrades.
+
+### Local development
+
+Requirements: Node.js 22+.
 
 ```bash
 npm ci
@@ -57,14 +98,14 @@ npm run secure:local
 npm run dev
 ```
 
-- Web：`http://localhost:5173`
-- API：`http://localhost:8787`
-- 本地数据：`apps/api/data/submail.sqlite`
-- 本地队列：默认 `memory`；需要联调 Redis 时设置 `SUBMAIL_QUEUE_DRIVER=redis` 和 `SUBMAIL_REDIS_URL`
+- Web UI: `http://localhost:5173`
+- API: `http://localhost:8787`
+- Local database: `apps/api/data/submail.sqlite`
+- Queue: in-memory by default; set `SUBMAIL_QUEUE_DRIVER=redis` and `SUBMAIL_REDIS_URL` to test Redis
 
-`npm run secure:local` 会为 `apps/api/.env` 生成权限为 `600` 的独立主密钥；若旧本地数据仍使用开发默认密钥，它会先备份 SQLite，再重加密邮箱和第三方 API 凭据，且不会打印密钥。开发和生产环境首次打开 Web 都可直接创建首个管理员；创建成功后初始化接口自动关闭。
+`npm run secure:local` creates an `apps/api/.env` file with mode `600` and a dedicated master key. If an older local database still uses the development key, the script backs it up and re-encrypts stored mailbox and integration credentials without printing secrets.
 
-常用检查：
+Quality checks:
 
 ```bash
 npm run typecheck
@@ -72,46 +113,30 @@ npm test
 npm run build
 ```
 
-### 项目目录
+## MCP and send API
 
-| 路径 | 用途 |
-| --- | --- |
-| `apps/web` | Web 邮件客户端与设置后台 |
-| `apps/api` | API、邮件同步/发送、数据仓储、队列和备份恢复 |
-| `apps/mcp` | MCP 工具与 stdio / HTTP transport |
-| `scripts` | 本地密钥加固和真实邮箱 / AI 接入检查 |
-| `tests` | API、POP3、MCP HTTP、运行锁与恢复集成测试 |
-| `docs` | 部署运维和功能复盘文档 |
-
-## Docker 一键部署
-
-服务器安装 Docker Engine 与 Compose 插件后执行：
-
-```bash
-./deploy.sh
-```
-
-脚本首次会询问数据库模式：SQLite、Compose 内置 MySQL 或外部 MySQL；随后生成随机加密密钥、创建权限为 `600` 的 `.env`、启动 Redis、构建服务并等待健康检查。默认只在 `127.0.0.1:8080` 暴露同源网关，应再由 Caddy、Nginx、Traefik 或负载均衡提供 HTTPS。
-
-完整的首次初始化、HTTP API、远程 MCP、备份恢复和升级说明见 [部署文档](docs/deployment.md)。
-
-## MCP
-
-Docker 部署后 MCP 地址为：
+Create a key in **Settings → MCP & Admin**, select its scopes and allowed mailboxes, then use the remote endpoint:
 
 ```text
-https://你的域名/mcp
+https://mail.example.com/mcp
 ```
 
-每个请求携带后台创建的 Key：
+Every request carries the key:
 
 ```http
 Authorization: Bearer sk_submail_xxx
 ```
 
-可用工具：`list_accounts`、`search_mail`、`read_mail`、`send_mail`、`summarize_mail`、`draft_reply`、`compose_mail`、`translate_mail`。默认新建 Key 仅勾选读取权限，发信、AI 和翻译能力需明确授权。
+Available tools:
 
-本地 stdio 模式：
+| Group | Tools |
+| --- | --- |
+| Read | `list_accounts`, `search_mail`, `read_mail` |
+| Send | `send_mail` |
+| AI | `summarize_mail`, `draft_reply`, `compose_mail` |
+| Translation | `translate_mail` |
+
+Local stdio mode:
 
 ```bash
 SUBMAIL_API_URL=http://127.0.0.1:8787 \
@@ -119,36 +144,74 @@ SUBMAIL_MCP_API_KEY=sk_submail_xxx \
 npm run dev:mcp
 ```
 
-## HTTP 发信 API
-
-后台生成具有“邮件发送”权限的 MCP / API Key，并授权可使用的邮箱后，可直接调用：
+Direct send API:
 
 ```bash
-curl --fail-with-body 'https://你的域名/api/send' \
+curl --fail-with-body 'https://mail.example.com/api/send' \
   -H 'Authorization: Bearer sk_submail_xxx' \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: order-20260710-0001' \
   --data '{
-    "accountId": "邮箱账号ID",
+    "accountId": "mailbox-account-id",
     "to": ["receiver@example.com"],
-    "subject": "测试邮件",
-    "text": "由 Submail API 发送"
+    "subject": "Hello from Submail",
+    "text": "Sent through the Submail API"
   }'
 ```
 
-API 支持文本、HTML、CC/BCC、附件、线程头、幂等键和可选的已验证 `fromAliasId`。MCP 的 `send_mail` 使用同一个发送服务，不存在两套投递逻辑。
+The API supports text, HTML, CC/BCC, attachments, thread headers, idempotency keys, and optional verified aliases. MCP `send_mail` uses the same delivery path.
 
-## 数据和安全边界
+## Security model
 
-- `SUBMAIL_SECRET` 用于解密邮箱密码和第三方 AI/翻译 Key。已有数据后不能随意更换，数据库备份必须与该密钥一起安全保管。
-- 管理员密码和 MCP / API Key 只保存不可逆 hash；新 Key 只显示一次。
-- 默认 Google 翻译走第三方公共服务，是免 Key 的 best-effort 方案，不适合机密邮件或严格 SLA；此类场景应改用自建或受信任的翻译服务。
-- IMAP 可同步 INBOX 和服务商公开的“已发送”目录；POP3 只同步收件箱，无法读取服务商的已发送目录。Web 中的已读、归档等本地状态尚不会写回邮箱服务器。
-- 开启二次验证的邮箱应填写应用专用密码或客户端授权码。Submail 会移除授权码中用于分组显示的空格；邮件协议本身无法处理短信/OTP 弹窗，强制 OAuth 的企业账号仍需后续增加 OAuth connector。
-- SQLite 与 MySQL 之间目前不自动迁移已有数据；确定数据库模式并产生业务数据后不要直接改模式。MySQL 请使用 `mysqldump`，SQLite 使用项目内置备份/恢复命令。
-- 当前未支持 Gmail/Microsoft OAuth、DKIM 签名、队列管理面板和标准 DSN 退信。完整缺口见 [功能复盘](docs/gap-review.md)。
+> [!IMPORTANT]
+> Email and attachments are untrusted input. Deploy behind HTTPS, grant the smallest possible scopes, keep send quotas low, and use app-specific mailbox passwords whenever the provider supports them.
 
-## 文档
+- Mailbox credentials and third-party API keys are encrypted at rest with AES-GCM using `SUBMAIL_SECRET`.
+- Admin passwords and MCP/API keys are stored as one-way hashes; a new key is displayed only once.
+- Keys can be restricted by capability, mailbox, expiry, and daily send quota.
+- AI output never sends automatically; it enters the composer for human review.
+- Audit logs record metadata rather than message bodies, prompts, email addresses, attachment Base64, or idempotency keys.
+- `SUBMAIL_SECRET` is tied to encrypted data. Back it up separately and never rotate it casually after storing credentials.
 
-- [部署、首次初始化、MCP / API、备份恢复与升级](docs/deployment.md)
-- [已完成能力、已知边界与后续路线](docs/gap-review.md)
+Please report vulnerabilities privately through [GitHub Security Advisories](../../security/advisories/new). Read [SECURITY.md](SECURITY.md) before reporting.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser["Browser"] --> Web["React + Vite / Nginx"]
+  Agent["AI / MCP client"] --> MCP["MCP server"]
+  Web --> API["Express API"]
+  MCP --> API
+  API --> DB["SQLite / MySQL"]
+  API --> Queue["Memory / Redis + BullMQ"]
+  API --> Mail["IMAP / POP3 / SMTP"]
+  API --> Services["AI and translation providers"]
+```
+
+| Path | Responsibility |
+| --- | --- |
+| `apps/web` | React mail client and administration UI |
+| `apps/api` | Authentication, mail sync/send, storage, queueing, AI, translation, backup and restore |
+| `apps/mcp` | stdio and Streamable HTTP MCP transports |
+| `scripts` | Local secret hardening and real-provider integration checks |
+| `tests` | API, POP3, HTTP MCP, runtime-lock, and restore integration tests |
+| `docs` | Deployment operations and feature-gap documentation |
+
+## Current boundaries
+
+- IMAP can read INBOX and the provider's public Sent folder; POP3 can read INBOX only.
+- Read, star, archive, and delete state is currently local and is not written back to IMAP.
+- Gmail and Microsoft OAuth, DKIM signing, DSN bounce processing, and a queue dashboard are not implemented yet.
+- SQLite and MySQL data are not automatically migrated between drivers.
+- The default free Google translation path is best-effort and is not appropriate for confidential email or strict SLAs.
+
+The detailed implementation review and roadmap live in [docs/gap-review.md](docs/gap-review.md).
+
+## Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), keep changes focused, and include the relevant tests or rendered UI evidence.
+
+## Project status and licensing
+
+Submail is an early-stage `0.1.x` project. A project-wide license has not yet been selected because optional document-viewer dependencies include components with copyleft licenses. Public repository access does not grant redistribution rights until a `LICENSE` file is added; dependency licenses continue to apply independently.

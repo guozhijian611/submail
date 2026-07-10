@@ -21,5 +21,8 @@
     "playwright": "^1.61.1",
     "smtp-server": "^3.19.2",
     "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.62.2"
   }
 }
