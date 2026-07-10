@@ -983,6 +983,10 @@ button:disabled {
   min-height: 180px;
   background: #ffffff;
   border: 0;
+  overflow: hidden;
+}
+
+.emailHtmlFrame.compact {
   overflow: auto;
 }
 

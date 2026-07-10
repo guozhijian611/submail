@@ -40,6 +40,25 @@ function processCss(css: string, allowExternalResources: boolean): { css: string
   };
 }
 
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function serializeAttributes(element: Element): string {
+  const attributes = Array.from(element.attributes)
+    .map((attribute) => `${attribute.name}="${escapeHtmlAttribute(attribute.value)}"`)
+    .join(" ");
+  return attributes ? ` ${attributes}` : "";
+}
+
+function safeStyleText(value: string): string {
+  return value.replace(/<\/style/giu, "<\\/style");
+}
+
 function blockExternalResourcesBeforeParsing(rawHtml: string): { html: string; count: number } {
   let count = 0;
   let html = rawHtml.replace(preparseResourceAttributePattern, (full, prefix: string, attribute: string, doubleQuoted?: string, singleQuoted?: string, unquoted?: string) => {
@@ -61,13 +80,14 @@ function blockExternalResourcesBeforeParsing(rawHtml: string): { html: string; c
   return { html: processedCss.css, count: count + processedCss.count };
 }
 
-export function prepareEmailHtml(rawHtml: string, allowExternalResources: boolean): PreparedEmailHtml {
+export function prepareEmailHtml(rawHtml: string, allowExternalResources: boolean, allowVerticalScroll = false): PreparedEmailHtml {
   const preprocessed = allowExternalResources
     ? { html: rawHtml, count: 0 }
     : blockExternalResourcesBeforeParsing(rawHtml);
   const sanitized = String(DOMPurify.sanitize(preprocessed.html, {
+    WHOLE_DOCUMENT: true,
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "input", "button", "textarea", "select", "base"],
+    FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "input", "button", "textarea", "select", "base", "meta", "link"],
     FORBID_ATTR: ["srcdoc"],
     ADD_ATTR: ["target", "rel"]
   }));
@@ -105,18 +125,13 @@ export function prepareEmailHtml(rawHtml: string, allowExternalResources: boolea
     externalResourceCount += processed.count;
     element.setAttribute("style", processed.css);
   }
+  const emailStyles: string[] = [];
   for (const style of document.querySelectorAll("style")) {
     const processed = processCss(style.textContent ?? "", allowExternalResources);
     externalResourceCount += processed.count;
-    style.textContent = processed.css;
+    emailStyles.push(processed.css);
+    style.remove();
   }
-  for (const stylesheet of document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]')) {
-    const href = stylesheet.getAttribute("href") ?? "";
-    if (!externalUrlPattern.test(href)) continue;
-    externalResourceCount += 1;
-    if (!allowExternalResources) stylesheet.remove();
-  }
-
   for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     link.target = "_blank";
     link.rel = "noopener noreferrer nofollow";
@@ -136,8 +151,25 @@ export function prepareEmailHtml(rawHtml: string, allowExternalResources: boolea
     blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #dce6e3; color: #596763; }
     .submailRemoteImageBlocked { display: inline-block; min-width: 140px; min-height: 34px; padding: 6px; color: #71807c; background: #f4f7f6; border: 1px dashed #cdd9d6; }
   `;
+  const measurementStyles = `
+    html, body { min-height: 0 !important; height: auto !important; }
+    html { overflow-y: ${allowVerticalScroll ? "auto" : "hidden"} !important; }
+    body { overflow-y: visible !important; }
+  `;
+  const serializedEmailStyles = emailStyles
+    .filter((style) => style.trim())
+    .map((style) => `<style>${safeStyleText(style)}</style>`)
+    .join("");
+  for (const element of [document.documentElement, document.body]) {
+    element.style.setProperty("min-height", "0", "important");
+    element.style.setProperty("height", "auto", "important");
+  }
+  document.documentElement.style.setProperty("overflow-y", allowVerticalScroll ? "auto" : "hidden", "important");
+  document.body.style.setProperty("overflow-y", "visible", "important");
+  const htmlAttributes = serializeAttributes(document.documentElement);
+  const bodyAttributes = serializeAttributes(document.body);
   return {
     externalResourceCount,
-    srcDoc: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy}"><meta name="referrer" content="no-referrer"><style>${baseStyles}</style></head><body>${document.body.innerHTML}</body></html>`
+    srcDoc: `<!doctype html><html${htmlAttributes}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy}"><meta name="referrer" content="no-referrer"><style>${baseStyles}</style>${serializedEmailStyles}<style>${measurementStyles}</style></head><body${bodyAttributes}>${document.body.innerHTML}</body></html>`
   };
 }

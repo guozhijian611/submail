@@ -1124,14 +1124,20 @@ function EmailBody({ message, compact = false, loadExternalResourcesByDefault = 
   );
   const [frameHeight, setFrameHeight] = React.useState(compact ? 180 : 260);
   const frameRef = React.useRef<HTMLIFrameElement>(null);
-  const resizeObserverRef = React.useRef<ResizeObserver | undefined>(undefined);
+  const frameCleanupRef = React.useRef<(() => void) | undefined>(undefined);
   const html = message.html_body?.trim();
   const prepared = React.useMemo(
-    () => html ? prepareEmailHtml(html, remoteChoice === "allowed") : undefined,
-    [html, remoteChoice]
+    () => html ? prepareEmailHtml(html, remoteChoice === "allowed", compact) : undefined,
+    [compact, html, remoteChoice]
   );
 
-  React.useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
+  React.useEffect(() => () => frameCleanupRef.current?.(), []);
+
+  React.useEffect(() => {
+    frameCleanupRef.current?.();
+    frameCleanupRef.current = undefined;
+    setFrameHeight(compact ? 180 : 240);
+  }, [compact, prepared?.srcDoc]);
 
   React.useEffect(() => {
     setRemoteChoice(loadExternalResourcesByDefault ? "allowed" : "ask");
@@ -1140,18 +1146,53 @@ function EmailBody({ message, compact = false, loadExternalResourcesByDefault = 
   function resizeFrame() {
     const contentDocument = frameRef.current?.contentDocument;
     if (!contentDocument) return;
-    const naturalHeight = Math.max(contentDocument.documentElement.scrollHeight, contentDocument.body?.scrollHeight ?? 0);
-    setFrameHeight(Math.min(Math.max(naturalHeight + 4, compact ? 180 : 240), compact ? 900 : 1800));
+    const root = contentDocument.documentElement;
+    const body = contentDocument.body;
+    const naturalHeight = Math.ceil(Math.max(
+      root.scrollHeight,
+      root.offsetHeight,
+      body?.scrollHeight ?? 0,
+      body?.offsetHeight ?? 0,
+      body?.getBoundingClientRect().height ?? 0
+    ));
+    const nextHeight = Math.min(Math.max(naturalHeight, compact ? 180 : 240), compact ? 900 : 100_000);
+    setFrameHeight((current) => current === nextHeight ? current : nextHeight);
   }
 
   function frameLoaded() {
-    resizeObserverRef.current?.disconnect();
-    resizeFrame();
+    frameCleanupRef.current?.();
     const contentDocument = frameRef.current?.contentDocument;
-    if (!contentDocument) return;
-    const observer = new ResizeObserver(resizeFrame);
-    observer.observe(contentDocument.documentElement);
-    resizeObserverRef.current = observer;
+    const contentWindow = frameRef.current?.contentWindow;
+    if (!contentDocument || !contentWindow) return;
+    let active = true;
+    let animationFrame = 0;
+    const scheduleResize = () => {
+      if (!active) return;
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(resizeFrame);
+    };
+    const observer = new ResizeObserver(scheduleResize);
+    if (contentDocument.body) observer.observe(contentDocument.body);
+    const images = Array.from(contentDocument.images);
+    for (const image of images) {
+      image.addEventListener("load", scheduleResize);
+      image.addEventListener("error", scheduleResize);
+    }
+    contentWindow.addEventListener("resize", scheduleResize);
+    const settleTimer = window.setTimeout(scheduleResize, 250);
+    void contentDocument.fonts?.ready.then(scheduleResize);
+    scheduleResize();
+    frameCleanupRef.current = () => {
+      active = false;
+      observer.disconnect();
+      cancelAnimationFrame(animationFrame);
+      window.clearTimeout(settleTimer);
+      contentWindow.removeEventListener("resize", scheduleResize);
+      for (const image of images) {
+        image.removeEventListener("load", scheduleResize);
+        image.removeEventListener("error", scheduleResize);
+      }
+    };
   }
 
   if (!prepared) {
@@ -1181,11 +1222,12 @@ function EmailBody({ message, compact = false, loadExternalResourcesByDefault = 
       )}
       <iframe
         ref={frameRef}
-        className="emailHtmlFrame"
+        className={`emailHtmlFrame ${compact ? "compact" : ""}`}
         title={`邮件正文：${message.subject}`}
         srcDoc={prepared.srcDoc}
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer"
+        scrolling={compact || frameHeight >= 100_000 ? "auto" : "no"}
         style={{ height: frameHeight }}
         onLoad={frameLoaded}
       />
