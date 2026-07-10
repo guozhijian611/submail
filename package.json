@@ -23,6 +23,12 @@
     "typescript": "^5.8.3"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "4.62.2"
+    "@rollup/rollup-linux-x64-gnu": "4.62.2",
+    "epubjs": "0.3.93"
+  },
+  "overrides": {
+    "epubjs@0.3.93": {
+      "@xmldom/xmldom": "0.8.13"
+    }
   }
 }

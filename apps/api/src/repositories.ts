@@ -737,15 +737,19 @@ function parseStringArray(value: string): string[] {
         return [];
     }
 }
-function messageParticipants(message: MessageRecord): Set<string> {
+type ThreadMessageMetadata = Pick<MessageRecord,
+    "id" | "account_id" | "folder" | "message_id" | "in_reply_to" | "reference_ids" |
+    "subject" | "sender_email" | "recipients" | "sent_at" | "created_at"
+>;
+function messageParticipants(message: ThreadMessageMetadata): Set<string> {
     return new Set([message.sender_email, ...parseStringArray(message.recipients)]
         .filter((item): item is string => Boolean(item))
         .map((item) => item.trim().toLowerCase()));
 }
-function messageCounterparts(message: MessageRecord, selfAddresses: Set<string>): Set<string> {
+function messageCounterparts(message: ThreadMessageMetadata, selfAddresses: Set<string>): Set<string> {
     return new Set([...messageParticipants(message)].filter((address) => !selfAddresses.has(address)));
 }
-function messageHeaderIds(message: MessageRecord): Set<string> {
+function messageHeaderIds(message: ThreadMessageMetadata): Set<string> {
     return new Set([message.message_id, message.in_reply_to, ...parseStringArray(message.reference_ids)]
         .filter((item): item is string => Boolean(item)));
 }
@@ -1087,12 +1091,35 @@ export const messageRepo = {
         ].filter((item): item is string => Boolean(item)).map((item) => item.trim().toLowerCase()));
         const anchorSubject = normalizedThreadSubject(anchor.subject);
         const anchorCounterparts = messageCounterparts(anchor, selfAddresses);
-        const candidates = await db.prepare(`
-      SELECT * FROM messages
+        // Sort only the small fields used for thread detection. Sorting complete
+        // message bodies can exceed the container's temporary storage once a
+        // mailbox has accumulated a few thousand messages.
+        const anchorTime = anchor.sent_at ?? anchor.created_at;
+        const olderCandidates = await db.prepare(`
+      SELECT id, account_id, folder, message_id, in_reply_to, reference_ids,
+             subject, sender_email, recipients, sent_at, created_at
+      FROM messages
       WHERE account_id = ? AND is_deleted = 0
+        AND COALESCE(sent_at, created_at) <= ?
+      ORDER BY COALESCE(sent_at, created_at) DESC
+      LIMIT 1000
+    `).all(anchor.account_id, anchorTime) as ThreadMessageMetadata[];
+        const newerCandidates = await db.prepare(`
+      SELECT id, account_id, folder, message_id, in_reply_to, reference_ids,
+             subject, sender_email, recipients, sent_at, created_at
+      FROM messages
+      WHERE account_id = ? AND is_deleted = 0
+        AND COALESCE(sent_at, created_at) > ?
       ORDER BY COALESCE(sent_at, created_at) ASC
-      LIMIT 2000
-    `).all(anchor.account_id) as MessageRecord[];
+      LIMIT 1000
+    `).all(anchor.account_id, anchorTime) as ThreadMessageMetadata[];
+        const candidates = [...new Map(
+            [...olderCandidates, anchor, ...newerCandidates].map((candidate) => [candidate.id, candidate])
+        ).values()].sort((left, right) => {
+                const leftTime = Date.parse(left.sent_at ?? left.created_at);
+                const rightTime = Date.parse(right.sent_at ?? right.created_at);
+                return leftTime - rightTime || left.id.localeCompare(right.id);
+        });
         const linkedIds = new Set<string>([anchor.id]);
         const linkedHeaders = messageHeaderIds(anchor);
         let expanded = true;
@@ -1110,7 +1137,7 @@ export const messageRepo = {
                 expanded = true;
             }
         }
-        const thread = candidates.filter((candidate) => {
+        const threadCandidates = candidates.filter((candidate) => {
             if (linkedIds.has(candidate.id))
                 return true;
             if (!anchorSubject || normalizedThreadSubject(candidate.subject) !== anchorSubject || anchorCounterparts.size === 0)
@@ -1124,7 +1151,26 @@ export const messageRepo = {
             const oppositeDirection = (anchor.folder === "Sent") !== (candidate.folder === "Sent");
             return replyLike || oppositeDirection;
         });
-        return thread.slice(-Math.max(1, Math.min(limit, 200)));
+        const maxThreadSize = Math.max(1, Math.min(limit, 200));
+        let selectedCandidates = threadCandidates.slice(-maxThreadSize);
+        if (!selectedCandidates.some((candidate) => candidate.id === anchor.id)) {
+            selectedCandidates = maxThreadSize === 1
+                ? [anchor]
+                : [...selectedCandidates.slice(-(maxThreadSize - 1)), anchor].sort((left, right) => {
+                    const leftTime = Date.parse(left.sent_at ?? left.created_at);
+                    const rightTime = Date.parse(right.sent_at ?? right.created_at);
+                    return leftTime - rightTime || left.id.localeCompare(right.id);
+                });
+        }
+        if (selectedCandidates.length === 0)
+            return [];
+        const placeholders = selectedCandidates.map(() => "?").join(", ");
+        const messages = await db.prepare(`SELECT * FROM messages WHERE id IN (${placeholders})`)
+            .all(...selectedCandidates.map((candidate) => candidate.id)) as MessageRecord[];
+        const messagesById = new Map(messages.map((message) => [message.id, message]));
+        return selectedCandidates
+            .map((candidate) => messagesById.get(candidate.id))
+            .filter((message): message is MessageRecord => Boolean(message));
     },
     async upsert(input: UpsertMessageInput) {
         const id = input.id ?? nanoid();

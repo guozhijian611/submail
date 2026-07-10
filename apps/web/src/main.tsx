@@ -597,7 +597,12 @@ const folderLabels: Record<MailFolder, string> = {
   TRASH: "垃圾箱"
 };
 
-function Sidebar({ state, setState, refresh }: { state: State; setState: (value: Partial<State>) => void; refresh: () => void }) {
+function Sidebar({ state, setState, navigate, refresh }: {
+  state: State;
+  setState: (value: Partial<State>) => void;
+  navigate: (value: Partial<State>) => void;
+  refresh: () => void;
+}) {
   const navItems: Array<{ folder: MailFolder; icon: React.ReactNode; count?: number }> = [
     { folder: "INBOX", icon: <Inbox size={16} />, count: state.inboxUnreadCount },
     { folder: "STARRED", icon: <Star size={16} /> },
@@ -627,7 +632,7 @@ function Sidebar({ state, setState, refresh }: { state: State; setState: (value:
           <button
             className={`navItem ${state.activeView === "mail" && state.activeFolder === item.folder ? "active" : ""}`}
             key={item.folder}
-            onClick={() => setState({ activeView: "mail", activeFolder: item.folder, messagePage: 1, selectedMessageIds: [], selectedMessage: undefined, selectedThreadMessages: [], selectedAttachments: [] })}
+            onClick={() => navigate({ activeView: "mail", activeFolder: item.folder, messagePage: 1, selectedMessageIds: [] })}
           >
             {item.icon} {folderLabels[item.folder]} {item.count ? <span>{item.count}</span> : null}
           </button>
@@ -636,10 +641,10 @@ function Sidebar({ state, setState, refresh }: { state: State; setState: (value:
 
       <div className="sectionTitle managementTitle">管理</div>
       <nav className="navGroup managementNav">
-        <button className={`navItem ${state.activeView === "sync" ? "active" : ""}`} onClick={() => setState({ activeView: "sync" })}>
+        <button className={`navItem ${state.activeView === "sync" ? "active" : ""}`} onClick={() => navigate({ activeView: "sync" })}>
           <Activity size={16} /> 同步任务
         </button>
-        <button className={`navItem ${state.activeView === "attachments" ? "active" : ""}`} onClick={() => setState({ activeView: "attachments" })}>
+        <button className={`navItem ${state.activeView === "attachments" ? "active" : ""}`} onClick={() => navigate({ activeView: "attachments" })}>
           <Paperclip size={16} /> 附件管理
         </button>
       </nav>
@@ -650,7 +655,7 @@ function Sidebar({ state, setState, refresh }: { state: State; setState: (value:
           <button
             className={`accountItem ${state.selectedAccountId === account.id ? "selected" : ""}`}
             key={account.id}
-            onClick={() => setState({ activeView: "mail", selectedAccountId: state.selectedAccountId === account.id ? undefined : account.id, messagePage: 1, selectedMessageIds: [], selectedMessage: undefined, selectedThreadMessages: [], selectedAttachments: [] })}
+            onClick={() => navigate({ activeView: "mail", selectedAccountId: state.selectedAccountId === account.id ? undefined : account.id, messagePage: 1, selectedMessageIds: [] })}
           >
             <MailProviderIcon email={account.email} size={24} />
             <span>{account.display_name}</span>
@@ -2647,8 +2652,22 @@ function App() {
     mcpKeyDailySendLimit: 100
   });
   const loadRequestId = React.useRef(0);
+  const messageSelectionRequestId = React.useRef(0);
 
   const setState = (value: Partial<State>) => rawSetState((previous) => ({ ...previous, ...value }));
+
+  function clearMessageSelection(value: Partial<State> = {}): Partial<State> {
+    loadRequestId.current += 1;
+    messageSelectionRequestId.current += 1;
+    const next: Partial<State> = {
+      ...value,
+      selectedMessage: undefined,
+      selectedThreadMessages: [],
+      selectedAttachments: []
+    };
+    setState(next);
+    return next;
+  }
 
   function currentSearchCriteria(input: State = state): SearchCriteria {
     return {
@@ -2758,8 +2777,8 @@ function App() {
       selectedMessage: undefined,
       selectedAttachments: []
     };
-    setState(patch);
-    await load(patch);
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   async function searchMessages() {
@@ -2769,8 +2788,8 @@ function App() {
       selectedMessage: undefined,
       selectedAttachments: []
     };
-    setState(patch);
-    await load(patch);
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   function toggleMessageSelection(id: string) {
@@ -2810,8 +2829,9 @@ function App() {
           ? `已恢复 ${result.updated} 封邮件`
           : `已将 ${result.updated} 封邮件移入垃圾箱`
     };
-    setState(patch);
-    await load(patch);
+    const next = movesCurrentPage ? clearMessageSelection(patch) : patch;
+    if (!movesCurrentPage) setState(next);
+    await load(next);
   }
 
   async function bootstrapAuth() {
@@ -2844,8 +2864,8 @@ function App() {
       selectedMessage: undefined,
       selectedAttachments: []
     };
-    setState(patch);
-    await load(patch);
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   async function runAssistantAction(message: Message, kind: AssistantResult["kind"]) {
@@ -3051,38 +3071,97 @@ function App() {
   async function deleteAccount(account: Account) {
     if (!window.confirm(`确定删除邮箱账号 ${account.display_name}？该账号下的本地邮件和附件也会删除。`)) return;
     await api(`/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
-    setState({
+    const patch: Partial<State> = {
       selectedAccountId: state.selectedAccountId === account.id ? undefined : state.selectedAccountId,
-      selectedMessage: undefined,
-      selectedAttachments: [],
       busyText: "邮箱账号已删除"
-    });
-    await load();
+    };
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   async function selectMessage(message: Message) {
-    const detailPromise = message.is_read
-      ? api<{ message: Message; attachments: Attachment[] }>(`/api/messages/${encodeURIComponent(message.id)}`)
+    const requestId = ++messageSelectionRequestId.current;
+    // Open the list payload immediately so a secondary thread/read-state
+    // request can never make the row appear unresponsive.
+    setState({
+      selectedMessage: message,
+      selectedThreadMessages: [message],
+      selectedAttachments: [],
+      busyText: "正在打开邮件…",
+      assistantError: undefined,
+      assistantResult: undefined
+    });
+    const detailPromise = api<{ message: Message; attachments: Attachment[] }>(`/api/messages/${encodeURIComponent(message.id)}`);
+    const threadPromise = api<{ messages: Message[] }>(`/api/messages/${encodeURIComponent(message.id)}/thread`);
+    const readStatePromise = message.is_read
+      ? Promise.resolve(undefined)
       : api<{ message: Message; attachments: Attachment[] }>(`/api/messages/${encodeURIComponent(message.id)}/state`, {
         method: "PATCH",
         body: JSON.stringify({ isRead: true })
       });
-    const [result, threadResult] = await Promise.all([
-      detailPromise,
-      api<{ messages: Message[] }>(`/api/messages/${encodeURIComponent(message.id)}/thread`)
-    ]);
-    const threadMessages = threadResult.messages.map((item) => item.id === result.message.id ? result.message : item);
-    setState({
-      selectedMessage: result.message,
-      selectedThreadMessages: threadMessages,
-      selectedAttachments: result.attachments,
-      messages: state.messages.map((item) => item.id === result.message.id ? result.message : item),
-      inboxUnreadCount: state.activeFolder === "INBOX" && !message.is_read
-        ? Math.max(0, state.inboxUnreadCount - 1)
-        : state.inboxUnreadCount,
-      assistantError: undefined,
-      assistantResult: undefined
+    const reconciledReadStatePromise = readStatePromise.then((readState) => {
+      if (!readState) return readState;
+      rawSetState((previous) => {
+        const listMessage = previous.messages.find((item) => item.id === readState.message.id);
+        const stoppedCountingAsUnreadInbox = listMessage?.folder === "INBOX"
+          && !listMessage.is_read
+          && !listMessage.is_archived
+          && !listMessage.is_deleted
+          && readState.message.is_read;
+        return {
+          ...previous,
+          messages: previous.messages.map((item) => item.id === readState.message.id ? readState.message : item),
+          inboxUnreadCount: stoppedCountingAsUnreadInbox
+            ? Math.max(0, previous.inboxUnreadCount - 1)
+            : previous.inboxUnreadCount
+        };
+      });
+      return readState;
     });
+    // Attach rejection handlers immediately. A fast secondary failure must not
+    // become an unhandled rejection while the detail request is still pending.
+    const secondaryRequests = Promise.allSettled([threadPromise, reconciledReadStatePromise]);
+    try {
+      const detail = await detailPromise;
+      if (requestId !== messageSelectionRequestId.current) return;
+      setState({
+        selectedMessage: detail.message,
+        selectedThreadMessages: [detail.message],
+        selectedAttachments: detail.attachments,
+        busyText: undefined
+      });
+
+      const [threadResult, readStateResult] = await secondaryRequests;
+      if (requestId !== messageSelectionRequestId.current) return;
+
+      const readState = readStateResult.status === "fulfilled" ? readStateResult.value : undefined;
+      const currentMessage = readState?.message ?? detail.message;
+      const threadMessages = threadResult.status === "fulfilled"
+        ? threadResult.value.messages.map((item) => item.id === currentMessage.id ? currentMessage : item)
+        : [currentMessage];
+      const secondaryErrors = [
+        threadResult.status === "rejected" ? "对话加载失败" : undefined,
+        readStateResult.status === "rejected" ? "标记已读失败" : undefined
+      ].filter((item): item is string => Boolean(item));
+      rawSetState((previous) => ({
+        ...previous,
+        selectedMessage: currentMessage,
+        selectedThreadMessages: threadMessages,
+        selectedAttachments: readState?.attachments ?? detail.attachments,
+        messages: previous.messages.map((item) => item.id === currentMessage.id ? currentMessage : item),
+        busyText: secondaryErrors.length > 0 ? `邮件已打开，${secondaryErrors.join("、")}` : undefined,
+        operationNotice: secondaryErrors.length > 0
+          ? { key: `message:${message.id}`, message: `邮件已打开，但${secondaryErrors.join("、")}`, tone: "error" }
+          : previous.operationNotice
+      }));
+    } catch (error) {
+      if (requestId !== messageSelectionRequestId.current) return;
+      const errorMessage = error instanceof Error ? error.message : "邮件详情加载失败";
+      setState({
+        busyText: errorMessage,
+        operationNotice: { key: `message:${message.id}`, message: `已显示本地邮件内容，但详情刷新失败：${errorMessage}`, tone: "error" }
+      });
+    }
   }
 
   async function updateMessageState(message: Message, patch: Partial<{ isRead: boolean; isStarred: boolean; isArchived: boolean; isDeleted: boolean }>) {
@@ -3116,8 +3195,9 @@ function App() {
 
   async function deleteDraft(message: Message) {
     await api(`/api/drafts/${encodeURIComponent(message.id)}`, { method: "DELETE" });
-    setState({ selectedMessage: undefined, selectedAttachments: [], busyText: "草稿已删除" });
-    await load();
+    const patch: Partial<State> = { busyText: "草稿已删除" };
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   async function downloadAttachment(attachment: Attachment) {
@@ -3251,8 +3331,8 @@ function App() {
       selectedAttachments: [],
       busyText: `已套用：${savedSearch.name}`
     };
-    setState(patch);
-    await load(patch);
+    const next = clearMessageSelection(patch);
+    await load(next);
   }
 
   async function deleteSavedSearch() {
@@ -3295,7 +3375,7 @@ function App() {
   async function logout() {
     await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     localStorage.removeItem(sessionTokenKey);
-    setState({ admin: undefined, admins: [], accounts: [], messages: [], selectedMessageIds: [], attachments: [], selectedAttachments: [], apiKeys: [], mcpLogs: [], syncRuns: [], selectedMessage: undefined, selectedSyncRun: undefined });
+    clearMessageSelection({ admin: undefined, admins: [], accounts: [], messages: [], selectedMessageIds: [], attachments: [], apiKeys: [], mcpLogs: [], syncRuns: [], selectedSyncRun: undefined });
   }
 
   React.useEffect(() => {
@@ -3304,7 +3384,7 @@ function App() {
 
   React.useEffect(() => {
     if (state.admin) load().catch((error) => setState({ busyText: error instanceof Error ? error.message : "加载失败" }));
-  }, [state.selectedAccountId, state.activeFolder, state.admin?.id]);
+  }, [state.selectedAccountId, state.activeFolder, state.activeView, state.admin?.id]);
 
   React.useEffect(() => {
     const notice = state.operationNotice;
@@ -3327,7 +3407,7 @@ function App() {
 
   return (
     <main className="appShell">
-      <Sidebar state={state} setState={setState} refresh={load} />
+      <Sidebar state={state} setState={setState} navigate={clearMessageSelection} refresh={load} />
       <div className="workspace">
         {state.activeView === "mail" ? (
           <Toolbar
