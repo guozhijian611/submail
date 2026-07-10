@@ -1,0 +1,161 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      SUBMAIL_HOST: 0.0.0.0
+      SUBMAIL_PORT: 8787
+      SUBMAIL_DB_DRIVER: ${SUBMAIL_DB_DRIVER:-sqlite}
+      SUBMAIL_DB_PATH: /data/submail.sqlite
+      SUBMAIL_MYSQL_URL: ${SUBMAIL_MYSQL_URL:-}
+      SUBMAIL_MYSQL_HOST: ${SUBMAIL_MYSQL_HOST:-mysql}
+      SUBMAIL_MYSQL_PORT: ${SUBMAIL_MYSQL_PORT:-3306}
+      SUBMAIL_MYSQL_DATABASE: ${SUBMAIL_MYSQL_DATABASE:-submail}
+      SUBMAIL_MYSQL_USER: ${SUBMAIL_MYSQL_USER:-submail}
+      SUBMAIL_MYSQL_PASSWORD: ${SUBMAIL_MYSQL_PASSWORD:-}
+      SUBMAIL_MYSQL_SSL: ${SUBMAIL_MYSQL_SSL:-false}
+      SUBMAIL_MYSQL_CONNECTION_LIMIT: ${SUBMAIL_MYSQL_CONNECTION_LIMIT:-10}
+      SUBMAIL_STORAGE_DIR: /storage
+      SUBMAIL_QUEUE_DRIVER: redis
+      SUBMAIL_REDIS_URL: redis://redis:6379/0
+      SUBMAIL_QUEUE_PREFIX: ${SUBMAIL_QUEUE_PREFIX:-submail}
+      SUBMAIL_QUEUE_CONCURRENCY: ${SUBMAIL_QUEUE_CONCURRENCY:-4}
+      SUBMAIL_SECRET: ${SUBMAIL_SECRET:?Run ./deploy.sh to generate SUBMAIL_SECRET}
+      SUBMAIL_ADMIN_NAME: ${SUBMAIL_ADMIN_NAME:-管理员}
+      SUBMAIL_ADMIN_EMAIL: ${SUBMAIL_ADMIN_EMAIL:-}
+      SUBMAIL_ADMIN_PASSWORD: ${SUBMAIL_ADMIN_PASSWORD:-}
+      SUBMAIL_TRUST_PROXY: "true"
+      SUBMAIL_DEMO_MODE: ${SUBMAIL_DEMO_MODE:-false}
+      SUBMAIL_MAX_INCOMING_MESSAGE_BYTES: ${SUBMAIL_MAX_INCOMING_MESSAGE_BYTES:-26214400}
+      SUBMAIL_MAX_INCOMING_BODY_BYTES: ${SUBMAIL_MAX_INCOMING_BODY_BYTES:-2097152}
+      SUBMAIL_MAX_OUTGOING_MESSAGE_BYTES: ${SUBMAIL_MAX_OUTGOING_MESSAGE_BYTES:-26214400}
+      SUBMAIL_MAIL_CONNECTION_TIMEOUT_MS: ${SUBMAIL_MAIL_CONNECTION_TIMEOUT_MS:-30000}
+      SUBMAIL_AUDIT_RETENTION_DAYS: ${SUBMAIL_AUDIT_RETENTION_DAYS:-30}
+      SUBMAIL_SYNC_RUN_RETENTION_DAYS: ${SUBMAIL_SYNC_RUN_RETENTION_DAYS:-90}
+    expose:
+      - "8787"
+    volumes:
+      - submail_data:/data
+      - submail_storage:/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 90s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - submail_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+  mysql:
+    profiles: ["mysql"]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SUBMAIL_MYSQL_ROOT_PASSWORD:-profile-not-enabled}
+      MYSQL_DATABASE: ${SUBMAIL_MYSQL_DATABASE:-submail}
+      MYSQL_USER: ${SUBMAIL_MYSQL_USER:-submail}
+      MYSQL_PASSWORD: ${SUBMAIL_MYSQL_PASSWORD:-profile-not-enabled}
+    command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    volumes:
+      - submail_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  mcp:
+    build:
+      context: .
+      dockerfile: apps/mcp/Dockerfile
+    environment:
+      NODE_ENV: production
+      SUBMAIL_MCP_TRANSPORT: http
+      SUBMAIL_MCP_HOST: 0.0.0.0
+      SUBMAIL_MCP_PORT: 3000
+      SUBMAIL_API_URL: http://api:8787
+      SUBMAIL_MCP_MAX_BODY_BYTES: ${SUBMAIL_MCP_MAX_BODY_BYTES:-41943040}
+      SUBMAIL_MCP_API_TIMEOUT_MS: ${SUBMAIL_MCP_API_TIMEOUT_MS:-120000}
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "${SUBMAIL_BIND_ADDRESS:-127.0.0.1}:${SUBMAIL_HTTP_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  submail_data:
+  submail_storage:
+  submail_redis:
+  submail_mysql:

@@ -1,0 +1,25 @@
+{
+  "name": "submail",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev -- --host 0.0.0.0",
+    "dev:mcp": "npm --workspace apps/mcp run dev",
+    "build": "npm --workspaces run build",
+    "secure:local": "node scripts/secure-local-data.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "npm --workspaces run typecheck",
+    "lint": "npm --workspaces run lint"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "playwright": "^1.61.1",
+    "smtp-server": "^3.19.2",
+    "typescript": "^5.8.3"
+  }
+}

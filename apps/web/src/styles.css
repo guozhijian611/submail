@@ -1,0 +1,3180 @@
+:root {
+  color: #17211f;
+  background: #ffffff;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f5f7f7;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: submail-spin 0.9s linear infinite;
+}
+
+@keyframes submail-spin {
+  to { transform: rotate(360deg); }
+}
+
+.operationToast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 220;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(460px, calc(100vw - 32px));
+  min-height: 54px;
+  padding: 12px 14px;
+  color: #24312e;
+  background: #ffffff;
+  border: 1px solid #d5e0de;
+  border-left: 4px solid #1d8076;
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(22, 40, 36, 0.18);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.operationToast.success {
+  border-left-color: #27825d;
+}
+
+.operationToast.error {
+  border-left-color: #bb4939;
+}
+
+.operationToastIcon {
+  display: inline-grid;
+  color: #1d8076;
+  place-items: center;
+}
+
+.operationToast.success .operationToastIcon {
+  color: #27825d;
+}
+
+.operationToast.error .operationToastIcon {
+  color: #bb4939;
+}
+
+.operationToast button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #65716e;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  place-items: center;
+}
+
+.operationToast button:hover {
+  color: #26332f;
+  background: #f0f4f3;
+}
+
+.authScreen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #f5f7f7;
+}
+
+.authCard {
+  display: grid;
+  gap: 16px;
+  width: min(420px, 100%);
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #dfe7e5;
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgba(30, 44, 41, 0.12);
+}
+
+.authBrand {
+  margin-bottom: 4px;
+}
+
+.authBrand .brandMark {
+  width: 48px;
+  height: 48px;
+  padding: 5px;
+  border-radius: 13px;
+}
+
+.authCard label {
+  display: grid;
+  gap: 7px;
+  color: #37433f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.authCard input {
+  width: 100%;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid #d7e0de;
+  border-radius: 7px;
+  outline: 0;
+}
+
+.authFieldHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generatePasswordButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  color: #14675f;
+  background: #edf7f5;
+  border: 1px solid #cfe5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.authHint,
+.authError {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.authHint {
+  color: #66726f;
+}
+
+.authError {
+  color: #a33b2d;
+}
+
+.appShell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 16px;
+  background: #ffffff;
+  border-right: 1px solid #e3e8e7;
+  height: 100dvh;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.brandMark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 4px;
+  place-items: center;
+  overflow: hidden;
+  background: #edf7f5;
+  border: 1px solid #d1e5e1;
+  border-radius: 11px;
+}
+
+.brandMark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand strong,
+.brand span {
+  display: block;
+}
+
+.brand strong {
+  font-size: 16px;
+}
+
+.brand span {
+  margin-top: 2px;
+  color: #6a7471;
+  font-size: 12px;
+}
+
+.primaryAction,
+.composeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  color: #ffffff;
+  background: #18756b;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.secondaryAction,
+.toolbarButton,
+.toolbarIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #23302d;
+  background: #ffffff;
+  border: 1px solid #d9e1df;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fullWidth {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.buttonRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.toolbarIcon {
+  width: 38px;
+  padding: 0;
+}
+
+.toolbarIcon.activeIcon {
+  color: #8a5800;
+  background: #fff2d7;
+  border-color: #f0d9a4;
+}
+
+.navGroup,
+.accountSection {
+  display: grid;
+  gap: 6px;
+}
+
+.navItem {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 11px;
+  color: #42504d;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.navItem.active,
+.accountItem.selected {
+  color: #0d4f49;
+  background: #e7f2f0;
+}
+
+.navItem span {
+  padding: 2px 7px;
+  color: #8a5800;
+  background: #fff2d7;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.sectionTitle {
+  margin: 4px 0 2px;
+  color: #7a8582;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.managementTitle {
+  margin-top: 10px;
+}
+
+.accountItem {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 7px 8px;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: #26322f;
+  text-align: left;
+}
+
+.mailProviderIcon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #ffffff;
+  background: var(--provider-color);
+  border: 1px solid color-mix(in srgb, var(--provider-color), #000000 10%);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.mailProviderIcon.provider-gmail {
+  background: linear-gradient(135deg, #4285f4 0 25%, #34a853 25% 50%, #fbbc05 50% 75%, #ea4335 75%);
+}
+
+.accountItem small {
+  grid-column: 2;
+  color: #7b8582;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: grid;
+  gap: 10px;
+  padding: 14px 22px;
+  background: #ffffff;
+  border-bottom: 1px solid #e3e8e7;
+}
+
+.toolbarMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.managementToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.managementToolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.managementToolbar strong {
+  color: #17211f;
+  font-size: 16px;
+}
+
+.managementToolbar span {
+  color: #71807c;
+  font-size: 12px;
+}
+
+.filterToggle.active {
+  color: #125f57;
+  background: #edf7f5;
+  border-color: #cfe4df;
+}
+
+.searchFiltersPanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #f7faf9;
+  border: 1px solid #e0e7e5;
+  border-radius: 10px;
+}
+
+.searchBox {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 12px;
+  background: #f5f7f7;
+  border: 1px solid #dfe6e4;
+  border-radius: 8px;
+}
+
+.advancedSearch {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 140px 140px auto auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.savedSearchBar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.savedSearchBar select {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  color: #17211f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+  outline: 0;
+  font-size: 13px;
+}
+
+.dangerButton {
+  color: #9b3f34;
+}
+
+.toolbarButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.advancedSearch label {
+  display: grid;
+  gap: 5px;
+  color: #596661;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.advancedSearch input {
+  height: 34px;
+  padding: 0 10px;
+  color: #17211f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+  outline: 0;
+}
+
+.advancedSearch .filterCheck {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  gap: 7px;
+}
+
+.advancedSearch .filterCheck input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.searchBox input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #17211f;
+  font-size: 14px;
+}
+
+.searchBox:has(input:disabled) {
+  color: #99a39f;
+  background: #f7f8f8;
+}
+
+.searchBox input:disabled {
+  cursor: not-allowed;
+  color: #8b9692;
+}
+
+.firstRunEmpty {
+  display: grid;
+  width: min(900px, calc(100% - 48px));
+  margin: clamp(36px, 8vh, 96px) auto 32px;
+  padding: clamp(28px, 4vw, 48px);
+  background: #ffffff;
+  border: 1px solid #dce7e4;
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(30, 61, 55, 0.09);
+}
+
+.firstRunHero {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.firstRunMark {
+  display: grid;
+  flex: 0 0 auto;
+  width: 76px;
+  height: 76px;
+  padding: 10px;
+  place-items: center;
+  background: #edf7f5;
+  border: 1px solid #d2e6e1;
+  border-radius: 20px;
+}
+
+.firstRunMark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.firstRunHero .eyebrow {
+  color: #18756b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.firstRunHero h1 {
+  margin: 7px 0 8px;
+  color: #13211e;
+  font-size: clamp(25px, 3vw, 36px);
+  line-height: 1.15;
+}
+
+.firstRunHero p {
+  max-width: 650px;
+  margin: 0;
+  color: #65716d;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.firstRunActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.firstRunSteps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #e8efed;
+}
+
+.firstRunSteps div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 9px;
+  padding: 14px;
+  color: #20675f;
+  background: #f7faf9;
+  border: 1px solid #e2eae8;
+  border-radius: 10px;
+}
+
+.firstRunSteps strong {
+  color: #283531;
+  font-size: 13px;
+}
+
+.firstRunSteps span {
+  grid-column: 2;
+  color: #6b7673;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) minmax(420px, 1fr);
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.messageList,
+.preview,
+.inspector {
+  min-height: 0;
+}
+
+.messageList,
+.preview,
+.panel {
+  background: #ffffff;
+  border: 1px solid #e0e7e5;
+  border-radius: 8px;
+}
+
+.messageList {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.listHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid #edf1f0;
+}
+
+.listHeader h1,
+.preview h2,
+.modal h2 {
+  margin: 0;
+  color: #13211e;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.listHeader p,
+.previewHeader p,
+.emptyPreview p {
+  margin: 5px 0 0;
+  color: #6d7774;
+  font-size: 13px;
+}
+
+.listHeader span {
+  padding: 5px 8px;
+  color: #875900;
+  background: #fff3da;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rows {
+  display: grid;
+}
+
+.messageBatchBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 8px 12px;
+  background: #f8faf9;
+  border-bottom: 1px solid #e6ecea;
+}
+
+.messageBatchBar > span {
+  margin-right: auto;
+  color: #66736f;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.batchSelectAll,
+.messageSelect {
+  display: inline-flex;
+  align-items: center;
+  color: #41504c;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.batchSelectAll {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.batchSelectAll input,
+.messageSelect input {
+  width: 16px;
+  height: 16px;
+  accent-color: #19776d;
+}
+
+.virtualMessageViewport {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.virtualMessageCanvas {
+  position: relative;
+  width: 100%;
+}
+
+.virtualMessageRow {
+  position: absolute;
+  inset: 0 0 auto;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  background: #ffffff;
+  border-bottom: 1px solid #edf1f0;
+  contain: strict;
+}
+
+.messageSelect {
+  justify-content: center;
+}
+
+.messageRow {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 0;
+  text-align: left;
+  overflow: hidden;
+}
+
+.messageRow.selected {
+  background: #eff7f6;
+}
+
+.messageRow.unread .rowSubject {
+  font-weight: 750;
+}
+
+.unreadBadge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  color: #0d5f56;
+  background: #dff2ee;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.rowTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #26312e;
+  font-size: 13px;
+}
+
+.rowTop time {
+  color: #7c8784;
+  white-space: nowrap;
+}
+
+.rowSubject {
+  color: #17211f;
+  font-size: 15px;
+}
+
+.messageRow p {
+  display: -webkit-box;
+  margin: 0;
+  color: #6b7673;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.messageRow mark {
+  padding: 0 2px;
+  color: #5e4100;
+  background: #fff0b8;
+  border-radius: 3px;
+}
+
+.preview {
+  height: 100%;
+  padding: 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf1f0;
+}
+
+.previewActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.preview article {
+  margin-top: 22px;
+  color: #2f3c39;
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.plainEmailBody,
+.emailHtmlBody {
+  margin-top: 22px;
+  color: #2f3c39;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.plainEmailBody {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.emailHtmlBody.compact,
+.plainEmailBody.compact,
+.conversationMessage .emailHtmlBody,
+.conversationMessage .plainEmailBody {
+  margin-top: 14px;
+}
+
+.remoteResourceNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  color: #5b4a1d;
+  background: #fff8e8;
+  border: 1px solid #ead8a8;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.remoteResourceNotice.allowed {
+  color: #315e58;
+  background: #edf7f5;
+  border-color: #cee4df;
+}
+
+.remoteResourceNotice > svg {
+  color: #98701a;
+}
+
+.remoteResourceNotice.allowed > svg {
+  color: #18756b;
+}
+
+.remoteResourceNotice strong,
+.remoteResourceNotice span {
+  display: block;
+}
+
+.remoteResourceNotice span {
+  margin-top: 2px;
+  color: inherit;
+}
+
+.remoteResourceActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.remoteResourceActions .toolbarButton {
+  min-height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.remoteResourceActions .toolbarButton.primary {
+  color: #ffffff;
+  background: #18756b;
+  border-color: #18756b;
+}
+
+.remoteChoiceConfirmed {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.emailHtmlFrame {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+  background: #ffffff;
+  border: 0;
+  overflow: auto;
+}
+
+.assistantPanel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  color: #285d57;
+  background: #edf7f5;
+  border: 1px solid #d5e8e4;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.assistantPanel.error {
+  color: #8d352b;
+  background: #fff2ef;
+  border-color: #efd1cb;
+}
+
+.assistantPanel.result {
+  display: grid;
+  align-items: stretch;
+}
+
+.assistantPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assistantPanelHeader .composeButton {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.assistantPanel pre {
+  margin: 0;
+  color: #293733;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.attachmentStrip {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #edf1f0;
+}
+
+.attachmentStrip h3 {
+  margin: 0 0 4px;
+  color: #26322f;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.attachmentItemRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.attachmentItem,
+.downloadRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  color: #2f3c39;
+  background: #f7faf9;
+  border: 1px solid #dfe7e5;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.attachmentItem {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.managementPage {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  width: min(1180px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.managementPageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.managementPageHeader h1 {
+  margin: 0;
+  color: #17211f;
+  font-size: 24px;
+}
+
+.managementPageHeader p {
+  margin: 5px 0 0;
+  color: #6f7b77;
+  font-size: 13px;
+}
+
+.managementCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #dde6e3;
+  border-radius: 12px;
+}
+
+.managementCard .syncRunFilters select,
+.attachmentPageFilters input,
+.attachmentPageFilters select {
+  min-width: 0;
+  height: 38px;
+  padding: 0 11px;
+  color: #25322f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 8px;
+  outline: 0;
+  font-size: 13px;
+}
+
+.attachmentPageFilters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  gap: 10px;
+}
+
+.managementRows {
+  display: grid;
+  border-top: 1px solid #edf1f0;
+}
+
+.syncRunPageRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 130px minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid #edf1f0;
+}
+
+.syncRunPageRow > div:not(.rowActions) {
+  display: grid;
+  gap: 3px;
+}
+
+.syncRunPageRow span,
+.syncRunPageRow p {
+  margin: 0;
+  color: #6e7a76;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.syncRunPageRow strong {
+  color: #27342f;
+  font-size: 13px;
+}
+
+.attachmentPageRow {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf1f0;
+}
+
+.attachmentPreviewButton {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  color: #2f3c39;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.attachmentPreviewButton > span,
+.attachmentMessageMeta {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.attachmentPreviewButton strong,
+.attachmentMessageMeta strong,
+.attachmentPreviewButton small,
+.attachmentMessageMeta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentPreviewButton strong,
+.attachmentMessageMeta strong {
+  color: #293631;
+  font-size: 13px;
+}
+
+.attachmentPreviewButton small,
+.attachmentMessageMeta span {
+  color: #74807c;
+  font-size: 12px;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.paginationBar > span {
+  color: #6e7a76;
+  font-size: 12px;
+}
+
+.paginationBar > div {
+  display: flex;
+  gap: 8px;
+}
+
+.messageList > .paginationBar {
+  padding: 10px 12px;
+  background: #ffffff;
+  border-top: 1px solid #e6ecea;
+}
+
+.attachmentItem span,
+.downloadRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentItem small,
+.downloadRow small {
+  color: #6d7774;
+  white-space: nowrap;
+}
+
+.downloadRow {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-top: 8px;
+  background: #ffffff;
+}
+
+.emptyPreview {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  color: #71807c;
+}
+
+.inspector {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.panel {
+  padding: 16px;
+}
+
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 13px;
+  color: #26322f;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.statusRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #edf1f0;
+  font-size: 13px;
+}
+
+.statusRow.flat {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px 0;
+}
+
+.statusRow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusRow small {
+  color: #6f7a77;
+  white-space: nowrap;
+}
+
+.accountManageRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #edf1f0;
+  font-size: 13px;
+}
+
+.accountSettingsPanel .accountManageRow {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.accountManageDetails {
+  min-width: 0;
+}
+
+.accountManageRow span,
+.accountManageRow small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountManageRow small {
+  margin-top: 3px;
+  color: #6f7a77;
+}
+
+.rowActions,
+.accountActions {
+  display: flex;
+  gap: 6px;
+}
+
+.accountActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.accountAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: #40504b;
+  background: #ffffff;
+  border: 1px solid #dbe3e1;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.accountAction.danger {
+  width: 30px;
+  padding: 0;
+  color: #9b3f34;
+}
+
+.accountDialogError {
+  margin: 12px 0 0;
+}
+
+.rowAction {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: #52615d;
+  background: #ffffff;
+  border: 1px solid #dbe3e1;
+  border-radius: 7px;
+}
+
+.rowAction.danger {
+  color: #9b3f34;
+}
+
+.syncSettingsForm {
+  display: grid;
+  gap: 9px;
+}
+
+.switchLine,
+.inlineField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #3d4946;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.switchLine input {
+  width: 16px;
+  height: 16px;
+}
+
+.inlineField input {
+  width: 72px;
+  height: 32px;
+  padding: 0 8px;
+  color: #17211f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+  color: #23645e;
+}
+
+.toolRow code {
+  font-size: 12px;
+}
+
+.apiKeyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #edf1f0;
+}
+
+.apiKeyMain {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.apiKeyMain span,
+.apiKeyMain small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apiKeyMain small {
+  color: #6f7a77;
+  font-size: 12px;
+}
+
+.scopePills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.scopePills code {
+  padding: 2px 6px;
+  color: #285d57;
+  background: #edf7f5;
+  border: 1px solid #d5e8e4;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.mcpKeyForm {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #edf1f0;
+}
+
+.mcpKeyForm label {
+  display: grid;
+  gap: 6px;
+  color: #3d4946;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mcpKeyForm input[type="text"],
+.mcpKeyForm input:not([type]),
+.mcpKeyForm input[type="datetime-local"],
+.mcpKeyForm input[type="number"] {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  color: #17211f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+}
+
+.accountScopeGrid {
+  display: grid;
+  gap: 7px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 9px;
+  background: #f7faf9;
+  border: 1px solid #e0e7e5;
+  border-radius: 7px;
+}
+
+.mcpKeyLimits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inlineNotice {
+  margin: 0;
+  color: #285d57;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcpEndpointBox {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 11px;
+  color: #43504d;
+  background: #f7faf9;
+  border: 1px solid #dfe7e5;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.mcpEndpointBox > code {
+  overflow-wrap: anywhere;
+  color: #0d5d54;
+  font-size: 12px;
+}
+
+.mcpEndpointBox small code {
+  overflow-wrap: anywhere;
+}
+
+.scopeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.mcpKeyForm .filterCheck {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px;
+  font-weight: 650;
+}
+
+.compact p {
+  margin: 0;
+  color: #68736f;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.keySecretBox {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.keySecret {
+  margin: 10px 0 0;
+  padding: 10px;
+  color: #0d4f49;
+  background: #e7f2f0;
+  border-radius: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.keySecretBox .keySecret {
+  margin: 0;
+}
+
+.emptyText {
+  margin: 0;
+  color: #77827f;
+  font-size: 13px;
+}
+
+.syncRunFilters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.syncRunFilters select {
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  color: #25322f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.attachmentControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.attachmentControls input,
+.attachmentControls select {
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  color: #25322f;
+  background: #ffffff;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.attachmentManageRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #edf1f0;
+}
+
+.attachmentManageRow .downloadRow {
+  margin-top: 0;
+}
+
+.logRow {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: 8px 72px 8px 0;
+  border-top: 1px solid #edf1f0;
+  font-size: 13px;
+}
+
+.logRow .inlineDetails {
+  position: absolute;
+  top: 8px;
+  right: 34px;
+}
+
+.logRow .inlineDetails.solo {
+  right: 0;
+}
+
+.logRow .inlineCancel {
+  position: absolute;
+  top: 8px;
+  right: 0;
+}
+
+.logRow span {
+  color: #25322f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.logRow small {
+  font-size: 12px;
+}
+
+.okText {
+  color: #18756b;
+}
+
+.errorText {
+  color: #a33b2d;
+}
+
+.warnText {
+  color: #875900;
+}
+
+.modalLayer {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(14, 21, 19, 0.35);
+  overflow: auto;
+  z-index: 100;
+}
+
+.modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid #dce4e2;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(20, 35, 32, 0.18);
+}
+
+.accountModal {
+  width: min(980px, 100%);
+}
+
+.accountModalHeader p {
+  margin: 6px 0 0;
+  color: #6d7774;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.providerSuggestion {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f4f8f7;
+  border: 1px solid #dce7e4;
+  border-radius: 10px;
+}
+
+.providerSuggestion strong,
+.providerSuggestion small {
+  display: block;
+}
+
+.providerSuggestion small {
+  margin-top: 3px;
+  color: #687570;
+  font-weight: 500;
+}
+
+.authModeHelp,
+.protocolNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  color: #4e5d59;
+  background: #f6faf9;
+  border: 1px solid #dfe9e6;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.authModeHelp svg,
+.protocolNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #18756b;
+}
+
+.authModeHelp strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #263733;
+}
+
+.protocolNotice {
+  color: #765400;
+  background: #fffaf0;
+  border-color: #eee0bd;
+}
+
+.protocolNotice svg {
+  color: #9a6c00;
+}
+
+.aliasIdentitySection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #f8faf9;
+  border: 1px solid #dfe8e5;
+  border-radius: 10px;
+}
+
+.aliasIdentityHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.aliasIdentityHeader strong,
+.aliasIdentityHeader small {
+  display: block;
+}
+
+.aliasIdentityHeader small {
+  margin-top: 4px;
+  color: #687570;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.aliasIdentityList {
+  display: grid;
+  gap: 10px;
+}
+
+.aliasIdentityCard {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.25fr) minmax(150px, 0.8fr) minmax(190px, 1fr);
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #dfe7e5;
+  border-radius: 9px;
+}
+
+.aliasSendToggle {
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  align-self: center;
+  gap: 7px !important;
+}
+
+.aliasSendToggle input {
+  width: auto;
+}
+
+.aliasStatus {
+  justify-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #7a4c00;
+  background: #fff1d2;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.aliasStatus.verified {
+  color: #126158;
+  background: #def2ee;
+}
+
+.aliasStatus.pending {
+  color: #315c86;
+  background: #e7f0fa;
+}
+
+.aliasVerificationActions {
+  display: flex;
+  grid-column: 2 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.aliasVerificationActions input {
+  width: 128px;
+}
+
+.formSectionTitle {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 10px 0 2px;
+  color: #1b655d;
+  border-top: 1px solid #e8efed;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.formSectionTitle:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.accountModal .checkLabel {
+  grid-column: 1 / -1;
+  align-items: center;
+  align-content: center;
+  min-height: 34px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.modal label {
+  display: grid;
+  gap: 7px;
+  color: #3c4845;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.modal input,
+.modal select,
+.modal textarea {
+  width: 100%;
+  border: 1px solid #d8e0de;
+  border-radius: 7px;
+  padding: 10px 11px;
+  color: #17211f;
+  outline: 0;
+  font-size: 14px;
+}
+
+.checkLabel {
+  align-content: end;
+  grid-template-columns: auto 1fr;
+}
+
+.checkLabel input {
+  width: auto;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.composer {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.savedSearchModal {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.syncRunDetailModal {
+  display: grid;
+  gap: 16px;
+  width: min(720px, calc(100vw - 32px));
+}
+
+.syncRunSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.syncRunSummary div,
+.syncRunDetailGrid div,
+.syncRunError {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  background: #f7faf9;
+  border: 1px solid #dfe7e5;
+  border-radius: 8px;
+}
+
+.syncRunSummary span,
+.syncRunDetailGrid span,
+.syncRunError span {
+  color: #6b7673;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.syncRunSummary strong,
+.syncRunDetailGrid strong {
+  min-width: 0;
+  color: #25322f;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.syncRunDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.syncRunError pre {
+  margin: 0;
+  color: #8e382e;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.composerAttachments {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  color: #40504c;
+  background: #f7faf9;
+  border: 1px solid #dfe7e5;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.composerAttachments span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerAiBox {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  background: #f1f8f7;
+  border: 1px solid #d7e9e5;
+  border-radius: 8px;
+}
+
+.composerAiBox > div {
+  display: grid;
+  gap: 3px;
+}
+
+.composerAiBox strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #175f57;
+  font-size: 13px;
+}
+
+.composerAiBox small,
+.panelDescription {
+  color: #6b7673;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.composerAiBox .secondaryAction {
+  justify-self: start;
+}
+
+.settingsModal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  width: min(980px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+.settingsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #edf1f0;
+}
+
+.settingsHeader p {
+  margin: 5px 0 0;
+  color: #6d7774;
+  font-size: 13px;
+}
+
+.settingsTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 5px;
+  background: #f1f5f4;
+  border-radius: 9px;
+}
+
+.settingsTabs button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: #52605c;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settingsTabs button.active {
+  color: #125f57;
+  background: #ffffff;
+  box-shadow: 0 1px 5px rgba(25, 53, 48, 0.1);
+}
+
+.settingsModal .inspector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: auto;
+  align-items: start;
+  overflow: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+
+.settingsModal .scheduleSettingsPanel,
+.settingsModal .syncRunsPanel,
+.settingsModal .attachmentSettingsPanel,
+.settingsModal .emailDisplaySettingsPanel {
+  grid-column: 1 / -1;
+}
+
+.emailDisplaySettingsForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.settingsSwitch {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  color: #33423e;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.settingsSwitchTrack {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  background: #cbd4d1;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(42, 67, 61, 0.12);
+  transition: background 160ms ease;
+}
+
+.settingsSwitchTrack > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(32, 54, 49, 0.28);
+  transition: transform 160ms ease;
+}
+
+.settingsSwitch.on .settingsSwitchTrack {
+  background: #187e72;
+}
+
+.settingsSwitch.on .settingsSwitchTrack > span {
+  transform: translateX(18px);
+}
+
+.settingsSwitch:focus-visible .settingsSwitchTrack {
+  outline: 3px solid rgba(24, 126, 114, 0.2);
+  outline-offset: 2px;
+}
+
+.settingsSwitchCopy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settingsSwitchCopy strong {
+  font-size: 13px;
+}
+
+.settingsSwitchCopy small {
+  color: #6c7774;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.privacyHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  margin: 0 0 0 56px;
+  color: #6b5a3e;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.privacyHint svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.emailDisplaySettingsForm > .secondaryAction {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.settingsModal .syncSettingsForm {
+  gap: 14px;
+}
+
+.settingsModal .syncFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settingsModal .syncField {
+  display: grid;
+  grid-template-rows: auto 36px;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px;
+  color: #42504c;
+  background: #f7faf9;
+  border: 1px solid #e2e9e7;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settingsModal .numberControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsModal .numberControl input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  line-height: 36px;
+  background: #ffffff;
+}
+
+.settingsModal .numberControl small {
+  min-width: 26px;
+  color: #687470;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settingsModal .syncScheduleMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settingsModal .syncScheduleMeta > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 10px 12px;
+  color: #45524e;
+  background: #f7faf9;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.settingsModal .syncScheduleMeta small {
+  overflow: hidden;
+  color: #6f7a77;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsModal .syncRunFilters {
+  gap: 10px;
+}
+
+.settingsModal .syncRunFilters select {
+  height: 38px;
+  padding: 0 34px 0 12px;
+  line-height: 1.35;
+  font-size: 13px;
+}
+
+.settingsModal .attachmentControls {
+  grid-template-columns: minmax(0, 1fr) 180px;
+}
+
+.settingsModal .attachmentControls input,
+.settingsModal .attachmentControls select {
+  height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.35;
+  font-size: 13px;
+}
+
+.attachmentLimitRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  background: #f7faf9;
+  border: 1px solid #e2e9e7;
+  border-radius: 9px;
+}
+
+.managementHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.numberStepper {
+  display: inline-grid;
+  grid-template-columns: 34px 58px auto 34px;
+  align-items: center;
+  min-height: 38px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #d7e0de;
+  border-radius: 8px;
+}
+
+.numberStepper button,
+.numberStepper input {
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #26332f;
+}
+
+.numberStepper button {
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.numberStepper button:hover:not(:disabled) {
+  color: #0f675e;
+  background: #edf7f5;
+}
+
+.numberStepper button:disabled {
+  color: #b8c2bf;
+}
+
+.numberStepper input {
+  width: 58px;
+  padding: 0 4px;
+  outline: 0;
+  text-align: center;
+  font: inherit;
+  font-weight: 700;
+}
+
+.numberStepper > span {
+  color: #6e7976;
+  font-size: 12px;
+}
+
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #52605c 50%), linear-gradient(135deg, #52605c 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: 32px !important;
+}
+
+.customFileField {
+  display: grid;
+  gap: 7px;
+}
+
+.customFilePicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  color: #176b62;
+  background: #edf7f5;
+  border: 1px dashed #91bcb6;
+  border-radius: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.customFilePicker:hover {
+  background: #e2f2ef;
+  border-color: #4d948b;
+}
+
+.visuallyHiddenFile {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.customFileField small,
+.formWide small {
+  color: #71807c;
+  font-size: 12px;
+}
+
+.formWide {
+  grid-column: 1 / -1;
+}
+
+.accountNote {
+  color: #6b7773 !important;
+  font-style: italic;
+}
+
+.messageAddressDetails {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+}
+
+.messageAddressDetails > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.messageAddressDetails dt {
+  color: #7b8783;
+  font-size: 12px;
+}
+
+.messageAddressDetails dd {
+  margin: 0;
+  color: #3f4c48;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.conversationThread {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.conversationToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  color: #285d57;
+  background: #edf7f5;
+  border: 1px solid #d5e8e4;
+  border-radius: 9px;
+}
+
+.conversationToolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conversationToolbar span,
+.conversationToolbar strong,
+.conversationToolbar small {
+  display: block;
+}
+
+.conversationToolbar small {
+  margin-top: 2px;
+  color: #64736f;
+  font-size: 12px;
+}
+
+.preview .conversationMessage {
+  margin: 0;
+  padding: 16px;
+  background: #f8faf9;
+  border: 1px solid #dfe8e5;
+  border-radius: 10px;
+  white-space: normal;
+}
+
+.preview .conversationMessage.outgoing {
+  margin-left: 32px;
+  background: #edf7f5;
+  border-color: #cfe4df;
+}
+
+.preview .conversationMessage.incoming {
+  margin-right: 32px;
+}
+
+.preview .conversationMessage.current {
+  box-shadow: 0 0 0 2px rgba(24, 117, 107, 0.14);
+}
+
+.conversationMessage h3 {
+  margin: 8px 0 0;
+  color: #26332f;
+  font-size: 14px;
+}
+
+.conversationMessage > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conversationMessage > header strong {
+  color: #176b62;
+  font-size: 12px;
+}
+
+.conversationMessage > header time {
+  color: #75817d;
+  font-size: 12px;
+}
+
+.conversationBody {
+  margin-top: 14px;
+  color: #2f3c39;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.inlineOriginalEmail {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e9e7;
+}
+
+.inlineOriginalEmail > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inlineOriginalEmail > div:first-child span {
+  color: #71807c;
+  font-size: 12px;
+}
+
+.flyfishViewer {
+  display: block;
+  width: 100%;
+  height: min(72vh, 760px);
+  min-height: 520px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #dfe7e5;
+  border-radius: 9px;
+}
+
+.inlineFlyfishViewer {
+  height: min(60vh, 620px);
+  min-height: 420px;
+}
+
+.viewerLoading {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: #65736f;
+  background: #f8faf9;
+  border: 1px dashed #cfdbd8;
+  border-radius: 9px;
+}
+
+.attachmentLimitCopy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.attachmentLimitCopy strong {
+  color: #35423e;
+  font-size: 13px;
+}
+
+.attachmentLimitCopy small {
+  color: #76817e;
+  font-size: 12px;
+}
+
+.settingsModal .attachmentLimitControl {
+  display: grid;
+  grid-template-columns: 82px auto;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.settingsModal .attachmentLimitControl input {
+  width: 82px;
+  height: 36px;
+  padding: 0 10px;
+  line-height: 36px;
+  background: #ffffff;
+}
+
+.settingsModal .compactAction {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.settingsModal .mcpKeyForm .filterCheck,
+.settingsModal .integrationForm .filterCheck {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.settingsModal .mcpKeyForm .filterCheck input,
+.settingsModal .integrationForm .filterCheck input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.integrationPanel {
+  align-self: start;
+}
+
+.panelDescription {
+  margin: -4px 0 14px;
+}
+
+.integrationForm {
+  display: grid;
+  gap: 12px;
+}
+
+.settingsModal .switchLine,
+.integrationForm .filterCheck {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsModal .switchLine input,
+.integrationForm .filterCheck input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
+.integrationForm .buttonRow {
+  flex-wrap: wrap;
+}
+
+.integrationNotice {
+  grid-column: 1 / -1;
+  color: #285d57;
+  background: #edf7f5;
+}
+
+.secondaryAction:disabled,
+.composeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.attachmentPreviewModal {
+  display: grid;
+  gap: 16px;
+  width: min(1120px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.attachmentPreviewBody {
+  display: grid;
+  min-height: 180px;
+  max-height: min(620px, 70vh);
+  overflow: auto;
+  place-items: stretch;
+  padding: 14px;
+  background: #f7faf9;
+  border: 1px solid #dfe7e5;
+  border-radius: 8px;
+}
+
+.attachmentPreviewBody img {
+  max-width: 100%;
+  max-height: 64vh;
+  object-fit: contain;
+}
+
+.attachmentPreviewText {
+  width: 100%;
+  margin: 0;
+  color: #23302d;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.attachmentPreviewFrame {
+  width: 100%;
+  min-height: min(560px, 62vh);
+  border: 0;
+  background: #ffffff;
+}
+
+.attachmentPreviewMedia {
+  max-width: 100%;
+  max-height: 60vh;
+}
+
+.originalEmailPreview {
+  display: grid;
+  align-self: stretch;
+  gap: 16px;
+  width: 100%;
+}
+
+.originalEmailHeaders {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #dfe7e5;
+  border-radius: 8px;
+}
+
+.originalEmailHeaders h3 {
+  margin: 0 0 12px;
+  color: #1e2b27;
+  font-size: 18px;
+}
+
+.originalEmailHeaders dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.originalEmailHeaders dl > div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.originalEmailHeaders dt {
+  color: #74807c;
+  font-size: 12px;
+}
+
+.originalEmailHeaders dd {
+  margin: 0;
+  color: #2f3c39;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.nestedAttachmentSummary {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: #edf7f5;
+  border-radius: 8px;
+  color: #40504c;
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .contentGrid {
+    grid-template-columns: 330px minmax(0, 1fr);
+  }
+
+  .inspector {
+    display: none;
+  }
+
+  .settingsModal .inspector {
+    display: grid;
+  }
+
+}
+
+@media (max-width: 860px) {
+  .settingsModal .syncFieldGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .appShell {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .sidebar {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 14px 16px;
+    border-right: 0;
+    border-bottom: 1px solid #e3e8e7;
+    height: auto;
+    overflow: visible;
+  }
+
+  .workspace {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .sidebar .primaryAction {
+    align-self: center;
+  }
+
+  .sidebar .navGroup {
+    display: flex;
+    grid-column: 1 / -1;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .sidebar .managementTitle {
+    display: none;
+  }
+
+  .sidebar .navItem {
+    flex: 0 0 auto;
+    grid-template-columns: auto auto;
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  .sidebar .navItem span {
+    display: none;
+  }
+
+  .sidebar .accountSection {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 7px;
+    overflow-x: auto;
+  }
+
+  .sidebar .accountSection .sectionTitle {
+    flex: 0 0 auto;
+  }
+
+  .sidebar .accountItem {
+    flex: 0 0 180px;
+  }
+
+  .sidebar > .secondaryAction {
+    display: none;
+  }
+
+  .toolbar {
+    height: auto;
+    padding: 14px 16px;
+  }
+
+  .managementToolbar {
+    display: flex;
+  }
+
+  .managementPage {
+    padding: 14px 12px 24px;
+  }
+
+  .managementPageHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .managementCard {
+    padding: 14px;
+  }
+
+  .attachmentPageFilters,
+  .managementCard .syncRunFilters,
+  .syncRunPageRow,
+  .attachmentPageRow {
+    grid-template-columns: 1fr;
+  }
+
+  .syncRunPageRow {
+    gap: 8px;
+  }
+
+  .attachmentPageRow {
+    align-items: stretch;
+  }
+
+  .attachmentLimitRow,
+  .managementHeaderActions {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .attachmentLimitRow {
+    display: grid;
+  }
+
+  .numberStepper {
+    width: 100%;
+    grid-template-columns: 42px minmax(58px, 1fr) auto 42px;
+  }
+
+  .flyfishViewer,
+  .inlineFlyfishViewer {
+    height: 60vh;
+    min-height: 360px;
+  }
+
+  .attachmentPageRow > .secondaryAction {
+    width: 100%;
+  }
+
+  .paginationBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paginationBar > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .attachmentItemRow {
+    align-items: stretch;
+  }
+
+  .toolbarMain {
+    flex-wrap: wrap;
+  }
+
+  .toolbarMain .searchBox {
+    flex: 1 0 100%;
+  }
+
+  .toolbarMain .toolbarButton,
+  .toolbarMain .composeButton {
+    flex: 0 0 auto;
+  }
+
+  .toolbarMain > .toolbarButton:disabled,
+  .toolbarMain > .composeButton:disabled {
+    display: none;
+  }
+
+  .advancedSearch {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .firstRunEmpty {
+    width: calc(100% - 24px);
+    margin: 18px auto 24px;
+    padding: 24px 18px;
+    border-radius: 14px;
+  }
+
+  .firstRunHero {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .firstRunMark {
+    width: 58px;
+    height: 58px;
+    padding: 7px;
+    border-radius: 15px;
+  }
+
+  .firstRunHero h1 {
+    font-size: 24px;
+  }
+
+  .firstRunSteps {
+    grid-template-columns: 1fr;
+  }
+
+  .savedSearchBar {
+    grid-template-columns: 1fr;
+  }
+
+  .syncRunSummary,
+  .syncRunDetailGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .contentGrid {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+
+  .messageList,
+  .preview {
+    min-height: auto;
+  }
+
+  .preview {
+    height: auto;
+    overflow: visible;
+  }
+
+  .messageList {
+    height: min(68vh, 620px);
+    min-height: 480px;
+  }
+
+  .messageBatchBar {
+    flex-wrap: wrap;
+  }
+
+  .messageBatchBar > span {
+    margin-right: 0;
+  }
+
+  .messageBatchBar .toolbarButton {
+    flex: 1 1 132px;
+  }
+
+  .inspector {
+    display: grid;
+    min-height: auto;
+  }
+
+  .settingsModal .inspector {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsModal .scheduleSettingsPanel,
+  .settingsModal .syncRunsPanel,
+  .settingsModal .attachmentSettingsPanel,
+  .settingsModal .emailDisplaySettingsPanel {
+    grid-column: auto;
+  }
+
+  .emailDisplaySettingsForm {
+    grid-template-columns: 1fr;
+  }
+
+  .privacyHint {
+    margin-left: 0;
+  }
+
+  .emailDisplaySettingsForm > .secondaryAction {
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .settingsModal .syncFieldGrid,
+  .settingsModal .syncScheduleMeta,
+  .settingsModal .syncRunFilters,
+  .settingsModal .attachmentControls,
+  .settingsModal .attachmentLimitRow {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsModal .attachmentLimitControl {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .settingsModal .attachmentLimitControl input {
+    width: 100%;
+  }
+
+  .modalLayer {
+    padding: 8px;
+  }
+
+  .settingsModal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 16px;
+  }
+
+  .settingsTabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .settingsTabs button {
+    flex: 0 0 auto;
+  }
+
+  .mcpKeyLimits {
+    grid-template-columns: 1fr;
+  }
+
+  .assistantPanelHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .previewHeader {
+    flex-direction: column;
+  }
+
+  .previewActions {
+    justify-content: flex-start;
+  }
+
+  .conversationToolbar,
+  .aliasIdentityHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .aliasIdentityCard {
+    grid-template-columns: 1fr;
+  }
+
+  .aliasVerificationActions {
+    grid-column: auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .providerSuggestion {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .providerSuggestion button {
+    grid-column: 1 / -1;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .remoteResourceNotice {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .remoteResourceActions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
