@@ -11,7 +11,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@file-viewer/react-full": "^2.1.25",
+    "@file-viewer/react-full": "^2.1.26",
     "@vitejs/plugin-react": "^4.5.2",
     "dompurify": "^3.4.11",
     "lucide-react": "^0.468.0",
