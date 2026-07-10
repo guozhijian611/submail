@@ -49,6 +49,10 @@ async function createMessages(knex: Knex, driver: DatabaseDriver): Promise<void>
     table.specificType("html_body", driver === "mysql" ? "longtext" : "text").nullable();
     table.string("sent_at", 40).nullable();
     table.text("flags").notNullable().defaultTo("[]");
+    table.string("remote_mailbox", 255).nullable();
+    table.string("remote_uid_validity", 191).nullable();
+    table.text("remote_state").notNullable().defaultTo("{}");
+    table.text("local_state_overrides").notNullable().defaultTo("{}");
     table.integer("is_read").notNullable().defaultTo(0);
     table.integer("is_starred").notNullable().defaultTo(0);
     table.integer("is_archived").notNullable().defaultTo(0);
@@ -136,6 +140,7 @@ async function createOperationsTables(knex: Knex): Promise<void> {
       table.string("uid_validity", 191).nullable();
       table.bigInteger("backfill_before_uid").nullable();
       table.integer("backfill_complete").notNullable().defaultTo(0);
+      table.string("last_reconcile_at", 40).nullable();
       table.string("updated_at", 40).notNullable();
       table.primary(["account_id", "mailbox_path"]);
     });
@@ -229,6 +234,10 @@ async function addMissingColumns(knex: Knex): Promise<void> {
     ["messages", "deleted_at", (table) => table.string("deleted_at", 40).nullable()],
     ["messages", "in_reply_to", (table) => table.string("in_reply_to", 998).nullable()],
     ["messages", "reference_ids", (table) => table.text("reference_ids").notNullable().defaultTo("[]")],
+    ["messages", "remote_mailbox", (table) => table.string("remote_mailbox", 255).nullable()],
+    ["messages", "remote_uid_validity", (table) => table.string("remote_uid_validity", 191).nullable()],
+    ["messages", "remote_state", (table) => table.text("remote_state").notNullable().defaultTo("{}")],
+    ["messages", "local_state_overrides", (table) => table.text("local_state_overrides").notNullable().defaultTo("{}")],
     ["accounts", "notes", (table) => table.text("notes").notNullable().defaultTo("")],
     ["accounts", "aliases", (table) => table.text("aliases").notNullable().defaultTo("[]")],
     ["accounts", "incoming_protocol", (table) => table.string("incoming_protocol", 16).notNullable().defaultTo("imap")],
@@ -237,6 +246,7 @@ async function addMissingColumns(knex: Knex): Promise<void> {
     ["accounts", "sync_uid_validity", (table) => table.string("sync_uid_validity", 191).nullable()],
     ["mailbox_sync_cursors", "backfill_before_uid", (table) => table.bigInteger("backfill_before_uid").nullable()],
     ["mailbox_sync_cursors", "backfill_complete", (table) => table.integer("backfill_complete").notNullable().defaultTo(0)],
+    ["mailbox_sync_cursors", "last_reconcile_at", (table) => table.string("last_reconcile_at", 40).nullable()],
     ["sync_settings", "initial_limit", (table) => table.integer("initial_limit").notNullable().defaultTo(30)],
     ["sync_settings", "retry_max_attempts", (table) => table.integer("retry_max_attempts").notNullable().defaultTo(1)],
     ["sync_settings", "retry_delay_minutes", (table) => table.integer("retry_delay_minutes").notNullable().defaultTo(5)],
@@ -273,6 +283,44 @@ async function normalizeLegacyAccountHosts(knex: Knex): Promise<void> {
   }
 }
 
+async function normalizeLegacyMessageState(knex: Knex): Promise<void> {
+  const messages = await knex("messages")
+    .select("id", "folder", "flags", "is_read", "is_starred", "is_archived", "is_deleted", "remote_state", "local_state_overrides")
+    .where({ remote_state: "{}", local_state_overrides: "{}" }) as Array<{
+      id: string;
+      folder: string;
+      flags: string;
+      is_read: number;
+      is_starred: number;
+      is_archived: number;
+      is_deleted: number;
+    }>;
+  for (const message of messages) {
+    let flags: string[] = [];
+    try {
+      const parsed = JSON.parse(message.flags);
+      if (Array.isArray(parsed)) flags = parsed.filter((flag): flag is string => typeof flag === "string");
+    } catch {
+      // Invalid legacy flags are treated as empty; the next IMAP reconciliation repairs them.
+    }
+    const remoteState = {
+      isRead: message.folder === "Sent" || flags.includes("\\Seen"),
+      isStarred: flags.includes("\\Flagged"),
+      isArchived: message.folder === "Archive",
+      isDeleted: message.folder === "Trash"
+    };
+    const localOverrides: Record<string, boolean> = {};
+    if (Boolean(message.is_read) !== remoteState.isRead) localOverrides.isRead = Boolean(message.is_read);
+    if (Boolean(message.is_starred) && !remoteState.isStarred) localOverrides.isStarred = true;
+    if (Boolean(message.is_archived) && !remoteState.isArchived) localOverrides.isArchived = true;
+    if (Boolean(message.is_deleted) && !remoteState.isDeleted) localOverrides.isDeleted = true;
+    await knex("messages").where({ id: message.id }).update({
+      remote_state: JSON.stringify(remoteState),
+      local_state_overrides: JSON.stringify(localOverrides)
+    });
+  }
+}
+
 export async function ensureSchema(knex: Knex, driver: DatabaseDriver): Promise<void> {
   await createAccounts(knex);
   await createMessages(knex, driver);
@@ -281,6 +329,7 @@ export async function ensureSchema(knex: Knex, driver: DatabaseDriver): Promise<
   await createOperationsTables(knex);
   await addMissingColumns(knex);
   await normalizeLegacyAccountHosts(knex);
+  await normalizeLegacyMessageState(knex);
 
   if (driver === "sqlite") {
     await knex.raw(`
@@ -304,6 +353,6 @@ export async function ensureSchema(knex: Knex, driver: DatabaseDriver): Promise<
         .whereNull("revoked_at")
         .update({ revoked_at: new Date().toISOString() });
     }
-    await knex.raw("PRAGMA user_version = 6");
+    await knex.raw("PRAGMA user_version = 7");
   }
 }

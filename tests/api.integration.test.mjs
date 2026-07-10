@@ -166,10 +166,16 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
   }
 
   const schemaDb = new Database(databasePath, { readonly: true });
-  assert.equal(schemaDb.pragma("user_version", { simple: true }), 6);
+  assert.equal(schemaDb.pragma("user_version", { simple: true }), 7);
   const cursorColumns = new Set(schemaDb.pragma("table_info(mailbox_sync_cursors)").map((column) => column.name));
   assert(cursorColumns.has("backfill_before_uid"));
   assert(cursorColumns.has("backfill_complete"));
+  assert(cursorColumns.has("last_reconcile_at"));
+  const messageColumns = new Set(schemaDb.pragma("table_info(messages)").map((column) => column.name));
+  assert(messageColumns.has("remote_mailbox"));
+  assert(messageColumns.has("remote_uid_validity"));
+  assert(messageColumns.has("remote_state"));
+  assert(messageColumns.has("local_state_overrides"));
   schemaDb.close();
 
   const setupStatus = await request(baseUrl, "/api/setup/status");
@@ -436,6 +442,30 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
   ].join("\r\n"));
   const attachmentId = "test-rfc822-attachment";
   const directDb = new Database(databasePath);
+  const localStateOverrides = JSON.parse(directDb.prepare("SELECT local_state_overrides FROM messages WHERE id = ?").get(sent.body.message.id).local_state_overrides);
+  assert.equal(localStateOverrides.isRead, true);
+  assert.equal(localStateOverrides.isDeleted, false);
+  assert.equal(localStateOverrides.isArchived, false);
+  const remoteDraftId = "remote-readonly-draft";
+  directDb.prepare(`
+    INSERT INTO messages (
+      id, account_id, folder, uid, remote_mailbox, remote_uid_validity, message_id, subject,
+      sender_name, sender_email, recipients, snippet, text_body, html_body, sent_at, flags,
+      is_read, is_starred, is_archived, is_deleted, created_at, updated_at
+    ) VALUES (?, ?, 'Drafts', 7, 'Drafts', '1', '<remote-draft@example.com>', 'Remote draft',
+      'Sender', 'sender@example.com', '["receiver@example.com"]', 'remote draft', 'remote draft', NULL, NULL, '["\\Draft"]',
+      1, 0, 0, 0, ?, ?)
+  `).run(remoteDraftId, accountId, new Date().toISOString(), new Date().toISOString());
+  const remoteArchiveId = "remote-readonly-archive";
+  directDb.prepare(`
+    INSERT INTO messages (
+      id, account_id, folder, uid, remote_mailbox, remote_uid_validity, message_id, subject,
+      sender_name, sender_email, recipients, snippet, text_body, html_body, sent_at, flags,
+      is_read, is_starred, is_archived, is_deleted, created_at, updated_at
+    ) VALUES (?, ?, 'Archive', 8, '[Gmail]/All Mail', '1', '<remote-archive@example.com>', 'Remote archive',
+      'Sender', 'sender@example.com', '[]', 'remote archive', 'remote archive', NULL, NULL, '[]',
+      1, 0, 1, 0, ?, ?)
+  `).run(remoteArchiveId, accountId, new Date().toISOString(), new Date().toISOString());
   directDb.prepare(`
     INSERT INTO attachments (id, message_id, filename, content_type, size, content_id, content_blob, storage_path, created_at)
     VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)
@@ -488,6 +518,15 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     new Date().toISOString()
   );
   directDb.close();
+
+  const remoteDraftDelete = await request(baseUrl, `/api/drafts/${remoteDraftId}`, { method: "DELETE", headers: adminHeaders });
+  assert.equal(remoteDraftDelete.response.status, 409, JSON.stringify(remoteDraftDelete.body));
+  const remoteArchiveRestore = await request(baseUrl, `/api/messages/${remoteArchiveId}/state`, {
+    method: "PATCH",
+    headers: adminHeaders,
+    body: JSON.stringify({ isArchived: false })
+  });
+  assert.equal(remoteArchiveRestore.response.status, 409, JSON.stringify(remoteArchiveRestore.body));
 
   const threadView = await request(baseUrl, `/api/messages/${sent.body.message.id}/thread`, { headers: adminHeaders });
   assert.equal(threadView.response.status, 200, JSON.stringify(threadView.body));
@@ -733,6 +772,58 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     headers: { "x-submail-api-key": noAccountKeyResult.body.apiKey.key }
   });
   assert.deepEqual(noAccountList.body.accounts, []);
+
+  const identityDb = new Database(databasePath);
+  identityDb.prepare(`
+    INSERT OR REPLACE INTO mailbox_sync_cursors (
+      account_id, mailbox_path, cursor_uid, uid_validity, backfill_before_uid, backfill_complete, last_reconcile_at, updated_at
+    ) VALUES (?, 'INBOX', 50, '1', 1, 1, ?, ?)
+  `).run(accountId, new Date().toISOString(), new Date().toISOString());
+  const localOnlyBeforeIdentityChange = identityDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND uid IS NULL AND remote_mailbox IS NULL
+  `).get(accountId).count;
+  assert(localOnlyBeforeIdentityChange > 0);
+  assert(identityDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND (uid IS NOT NULL OR remote_mailbox IS NOT NULL)
+  `).get(accountId).count > 0);
+  identityDb.close();
+  const changedMailboxIdentity = await request(baseUrl, `/api/accounts/${accountId}`, {
+    method: "PUT",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      email: "sender@example.com",
+      displayName: "Sender",
+      notes: "Primary support mailbox",
+      aliases: enabledAliasAccount.body.account.aliases.map((alias) => ({
+        id: alias.id,
+        email: alias.email,
+        displayName: alias.display_name,
+        replyTo: alias.reply_to,
+        sendEnabled: alias.send_enabled
+      })),
+      username: "other-sender@example.com",
+      imapHost: "imap.invalid",
+      imapPort: 993,
+      imapSecure: true,
+      smtpHost: "127.0.0.1",
+      smtpPort: smtpAddress.port,
+      smtpSecure: true
+    })
+  });
+  assert.equal(changedMailboxIdentity.response.status, 200, JSON.stringify(changedMailboxIdentity.body));
+  const identityCheckDb = new Database(databasePath, { readonly: true });
+  assert.equal(
+    identityCheckDb.prepare("SELECT COUNT(*) AS count FROM messages WHERE account_id = ?").get(accountId).count,
+    localOnlyBeforeIdentityChange
+  );
+  assert.equal(identityCheckDb.prepare(`
+    SELECT COUNT(*) AS count FROM messages
+    WHERE account_id = ? AND (uid IS NOT NULL OR remote_mailbox IS NOT NULL)
+  `).get(accountId).count, 0);
+  assert.equal(identityCheckDb.prepare("SELECT COUNT(*) AS count FROM mailbox_sync_cursors WHERE account_id = ?").get(accountId).count, 0);
+  identityCheckDb.close();
 
   child.kill("SIGTERM");
   await once(child, "exit");

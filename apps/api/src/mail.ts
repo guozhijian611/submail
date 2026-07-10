@@ -2,9 +2,10 @@ import { simpleParser } from "mailparser";
 import { ImapFlow, type FetchMessageObject, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
 import Pop3Command from "node-pop3";
-import { accountRepo, appSettingsRepo, attachmentRepo, mailboxCursorRepo, messageRepo, pop3SeenRepo } from "./repositories.js";
+import { accountRepo, appSettingsRepo, attachmentRepo, mailboxCursorRepo, messageRepo, pop3SeenRepo, type RemoteMessageState, type UpsertMessageInput } from "./repositories.js";
 import type { AccountRecord } from "./types.js";
 import { config } from "./config.js";
+import { db } from "./db.js";
 function textSnippet(value: string): string {
     return value.replace(/\s+/g, " ").trim().slice(0, 180);
 }
@@ -41,15 +42,86 @@ function truncateUtf8(value: string, maxBytes: number): string {
 function sizeLabel(value: number): string {
     return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
-function findSentMailbox(mailboxes: ListResponse[]): ListResponse | undefined {
-    const bySpecialUse = mailboxes.find((mailbox) => mailbox.specialUse === "\\Sent");
+type LocalMailboxFolder = "INBOX" | "Sent" | "Drafts" | "Trash" | "Archive";
+type PreparedImapImport = {
+    message: UpsertMessageInput;
+    attachments?: Array<{
+        filename: string;
+        contentType: string;
+        size: number;
+        contentId?: string;
+        content: Buffer;
+    }>;
+};
+export type ImapSyncTarget = {
+    mailboxPath: string;
+    localFolder: LocalMailboxFolder;
+    gmailArchive: boolean;
+};
+const mailboxFallbackNames = {
+    Sent: new Set(["sent", "sent mail", "sent messages", "sent items", "已发送", "已发送邮件"]),
+    Drafts: new Set(["draft", "drafts", "草稿", "草稿箱", "草稿邮件"]),
+    Trash: new Set(["trash", "bin", "deleted", "deleted items", "垃圾箱", "已删除", "已删除邮件"]),
+    Archive: new Set(["archive", "archives", "archived", "归档", "已归档", "存档"])
+} as const;
+function selectableMailbox(mailbox: ListResponse): boolean {
+    return !mailbox.flags?.has("\\Noselect");
+}
+function findSpecialMailbox(mailboxes: ListResponse[], specialUse: string, commonNames: ReadonlySet<string>): ListResponse | undefined {
+    const bySpecialUse = mailboxes.find((mailbox) => selectableMailbox(mailbox) && mailbox.specialUse === specialUse);
     if (bySpecialUse)
         return bySpecialUse;
-    const commonNames = new Set(["sent", "sent mail", "sent messages", "sent items", "已发送", "已发送邮件"]);
     return mailboxes.find((mailbox) => {
+        if (!selectableMailbox(mailbox))
+            return false;
         const leaf = mailbox.path.split(mailbox.delimiter || "/").at(-1)?.trim().toLowerCase() ?? "";
         return commonNames.has(leaf);
     });
+}
+export function discoverImapSyncTargets(mailboxes: ListResponse[], gmailLabels: boolean): ImapSyncTarget[] {
+    const targets: ImapSyncTarget[] = [{ mailboxPath: "INBOX", localFolder: "INBOX", gmailArchive: false }];
+    const candidates: Array<[ListResponse | undefined, LocalMailboxFolder, boolean]> = [
+        [findSpecialMailbox(mailboxes, "\\Sent", mailboxFallbackNames.Sent), "Sent", false],
+        [findSpecialMailbox(mailboxes, "\\Drafts", mailboxFallbackNames.Drafts), "Drafts", false],
+        [findSpecialMailbox(mailboxes, "\\Trash", mailboxFallbackNames.Trash), "Trash", false]
+    ];
+    const archive = findSpecialMailbox(mailboxes, "\\Archive", mailboxFallbackNames.Archive);
+    const gmailAll = gmailLabels
+        ? mailboxes.find((mailbox) => selectableMailbox(mailbox) && mailbox.specialUse === "\\All")
+        : undefined;
+    candidates.push([gmailAll ?? archive, "Archive", Boolean(gmailAll)]);
+    const seen = new Set(["INBOX"]);
+    for (const [mailbox, localFolder, gmailArchive] of candidates) {
+        if (!mailbox || seen.has(mailbox.path))
+            continue;
+        seen.add(mailbox.path);
+        targets.push({ mailboxPath: mailbox.path, localFolder, gmailArchive });
+    }
+    return targets;
+}
+function gmailLabelsFor(message: FetchMessageObject): Set<string> {
+    return new Set([...message.labels ?? []].map((label) => label.trim().toLowerCase()));
+}
+export function belongsToTarget(message: FetchMessageObject, target: ImapSyncTarget): boolean {
+    if (!target.gmailArchive)
+        return true;
+    if (!message.labels)
+        return false;
+    const labels = gmailLabelsFor(message);
+    return !["\\inbox", "\\sent", "\\draft", "\\drafts", "\\trash", "\\spam", "\\junk"]
+        .some((label) => labels.has(label));
+}
+export function remoteMessageState(message: FetchMessageObject, target: ImapSyncTarget) {
+    const flags = [...message.flags ?? []].sort();
+    const labels = gmailLabelsFor(message);
+    return {
+        uid: message.uid,
+        flags,
+        isRead: target.localFolder === "Sent" || flags.includes("\\Seen"),
+        isStarred: flags.includes("\\Flagged") || labels.has("\\starred"),
+        isArchived: target.localFolder === "Archive",
+        isDeleted: target.localFolder === "Trash"
+    };
 }
 function providerAuthHint(email: string): string {
     const domain = email.split("@").at(-1)?.toLowerCase() ?? "";
@@ -90,14 +162,14 @@ function connectionError(account: AccountRecord, error: unknown, protocol: "IMAP
         return `${protocol} 连接超时，请检查端口、防火墙和 TLS 设置。`;
     return sanitized;
 }
-async function syncMailbox(client: ImapFlow, account: AccountRecord, mailboxPath: string, localFolder: "INBOX" | "Sent", initialLimit: number, attachmentLimit: number): Promise<{
+async function syncMailbox(client: ImapFlow, account: AccountRecord, target: ImapSyncTarget, initialLimit: number, attachmentLimit: number, gmailLabels: boolean): Promise<{
     imported: number;
     cursorUid: number;
 }> {
-    const mailbox = await client.mailboxOpen(mailboxPath);
+    const mailbox = await client.mailboxOpen(target.mailboxPath);
     const uidValidity = mailbox.uidValidity.toString();
-    const storedCursor = await mailboxCursorRepo.get(account.id, mailboxPath);
-    const legacyCursor = localFolder === "INBOX" && !storedCursor
+    const storedCursor = await mailboxCursorRepo.get(account.id, target.mailboxPath);
+    const legacyCursor = target.localFolder === "INBOX" && !storedCursor
         ? { cursor_uid: Number(account.sync_cursor_uid ?? 0), uid_validity: account.sync_uid_validity }
         : undefined;
     const cursorRecord = storedCursor ?? legacyCursor;
@@ -105,74 +177,96 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, mailboxPath
     const cursorValid = cursorRecord?.uid_validity === uidValidity;
     const cursorUid = cursorValid ? Number(cursorRecord?.cursor_uid ?? 0) : 0;
     const batchLimit = Math.max(1, Math.min(1000, initialLimit));
+    const lastReconcileAt = Date.parse(storedCursor?.last_reconcile_at ?? "");
+    const shouldReconcile = !cursorValid
+        || !Number.isFinite(lastReconcileAt)
+        || Date.now() - lastReconcileAt >= 6 * 60 * 60 * 1000;
+    const preparedImports: PreparedImapImport[] = [];
 
     async function importRange(fetchRange: string, useUidRange: boolean): Promise<{ imported: number; minUid: number; maxUid: number }> {
         const messages: FetchMessageObject[] = [];
         let minUid = Number.POSITIVE_INFINITY;
         let maxUid = 0;
         let imported = 0;
-        for await (const message of client.fetch(fetchRange, { uid: true, envelope: true, flags: true, size: true }, { uid: useUidRange })) {
+        for await (const message of client.fetch(fetchRange, { uid: true, envelope: true, flags: true, labels: gmailLabels, size: true }, { uid: useUidRange })) {
             minUid = Math.min(minUid, message.uid);
             maxUid = Math.max(maxUid, message.uid);
-            messages.push(message);
+            if (belongsToTarget(message, target))
+                messages.push(message);
         }
         // Finish the FETCH iterator before fetchOne calls on the same connection.
         for (const message of messages) {
+            const remoteState = remoteMessageState(message, target);
             if ((message.size ?? 0) > config.maxIncomingMessageBytes) {
                 const from = message.envelope?.from?.[0];
-                await messageRepo.upsert({
-                    accountId: account.id,
-                    folder: localFolder,
-                    uid: message.uid,
-                    subject: message.envelope?.subject ?? "(无主题)",
-                    senderName: from?.name,
-                    senderEmail: from?.address,
-                    recipients: (message.envelope?.to ?? []).map((address) => address.address).filter((address): address is string => Boolean(address)),
-                    snippet: `邮件大小 ${sizeLabel(message.size ?? 0)}，超过接收上限 ${sizeLabel(config.maxIncomingMessageBytes)}，仅保存元数据。`,
-                    textBody: "该邮件超过管理员配置的接收大小上限，正文和附件未下载。",
-                    sentAt: message.envelope?.date?.toISOString(),
-                    flags: Array.from(message.flags ?? []),
-                    isRead: message.flags?.has("\\Seen") ?? localFolder === "Sent"
+                preparedImports.push({
+                    message: {
+                        accountId: account.id,
+                        folder: target.localFolder,
+                        uid: message.uid,
+                        subject: message.envelope?.subject ?? "(无主题)",
+                        senderName: from?.name,
+                        senderEmail: from?.address,
+                        recipients: (message.envelope?.to ?? []).map((address) => address.address).filter((address): address is string => Boolean(address)),
+                        snippet: `邮件大小 ${sizeLabel(message.size ?? 0)}，超过接收上限 ${sizeLabel(config.maxIncomingMessageBytes)}，仅保存元数据。`,
+                        textBody: "该邮件超过管理员配置的接收大小上限，正文和附件未下载。",
+                        sentAt: message.envelope?.date?.toISOString(),
+                        flags: remoteState.flags,
+                        isRead: remoteState.isRead,
+                        isStarred: remoteState.isStarred,
+                        isArchived: remoteState.isArchived,
+                        isDeleted: remoteState.isDeleted,
+                        remoteMailbox: target.mailboxPath,
+                        remoteUidValidity: uidValidity
+                    }
                 });
                 imported += 1;
                 continue;
             }
             const sourceMessage = await client.fetchOne(String(message.uid), { source: true }, { uid: true });
-            if (!sourceMessage || !sourceMessage.source)
-                continue;
+            if (!sourceMessage || !sourceMessage.source) {
+                throw new Error(`邮箱目录 ${target.mailboxPath} 无法完整读取 UID ${message.uid}，本次同步未提交`);
+            }
             const parsed = await simpleParser(sourceMessage.source);
             const from = firstAddress(parsed.from);
             const recipients = [...addressList(parsed.to), ...addressList(parsed.cc)];
             const text = truncateUtf8(parsed.text ?? "", config.maxIncomingBodyBytes);
             const htmlText = truncateUtf8(typeof parsed.html === "string" ? parsed.html : "", config.maxIncomingBodyBytes);
             const skippedAttachments = parsed.attachments.filter((attachment) => (attachment.size ?? attachment.content.length) > attachmentLimit);
-            const savedMessage = await messageRepo.upsert({
-                accountId: account.id,
-                folder: localFolder,
-                uid: message.uid,
-                messageId: parsed.messageId,
-                inReplyTo: parsed.inReplyTo,
-                references: Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [],
-                subject: parsed.subject ?? "(无主题)",
-                senderName: from?.name,
-                senderEmail: from?.address,
-                recipients,
-                snippet: textSnippet(`${text || htmlText.replace(/<[^>]*>/g, " ") || ""}${skippedAttachments.length ? ` [${skippedAttachments.length} 个超限附件未保存]` : ""}`),
-                textBody: text,
-                htmlBody: htmlText || undefined,
-                sentAt: parsed.date?.toISOString(),
-                flags: Array.from(message.flags ?? []),
-                isRead: message.flags?.has("\\Seen") ?? localFolder === "Sent"
-            });
-            await attachmentRepo.replaceForMessage(savedMessage.id, parsed.attachments
-                .filter((attachment) => (attachment.size ?? attachment.content.length) <= attachmentLimit)
-                .map((attachment) => ({
+            preparedImports.push({
+                message: {
+                    accountId: account.id,
+                    folder: target.localFolder,
+                    uid: message.uid,
+                    messageId: parsed.messageId,
+                    inReplyTo: parsed.inReplyTo,
+                    references: Array.isArray(parsed.references) ? parsed.references : parsed.references ? [parsed.references] : [],
+                    subject: parsed.subject ?? "(无主题)",
+                    senderName: from?.name,
+                    senderEmail: from?.address,
+                    recipients,
+                    snippet: textSnippet(`${text || htmlText.replace(/<[^>]*>/g, " ") || ""}${skippedAttachments.length ? ` [${skippedAttachments.length} 个超限附件未保存]` : ""}`),
+                    textBody: text,
+                    htmlBody: htmlText || undefined,
+                    sentAt: parsed.date?.toISOString(),
+                    flags: remoteState.flags,
+                    isRead: remoteState.isRead,
+                    isStarred: remoteState.isStarred,
+                    isArchived: remoteState.isArchived,
+                    isDeleted: remoteState.isDeleted,
+                    remoteMailbox: target.mailboxPath,
+                    remoteUidValidity: uidValidity
+                },
+                attachments: parsed.attachments
+                    .filter((attachment) => (attachment.size ?? attachment.content.length) <= attachmentLimit)
+                    .map((attachment) => ({
                     filename: attachment.filename ?? "attachment",
                     contentType: attachment.contentType ?? "application/octet-stream",
                     size: attachment.size ?? attachment.content.length,
                     contentId: attachment.contentId,
                     content: attachment.content
-                })));
+                    }))
+            });
             imported += 1;
         }
         return {
@@ -182,10 +276,36 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, mailboxPath
         };
     }
 
+    const remoteStates: RemoteMessageState[] = [];
+    if (shouldReconcile && mailbox.exists > 0) {
+        for await (const message of client.fetch("1:*", { uid: true, flags: true, labels: gmailLabels })) {
+            if (belongsToTarget(message, target))
+                remoteStates.push(remoteMessageState(message, target));
+        }
+    }
     let imported = 0;
     let backfillBeforeUid = cursorValid && storedCursor ? Number(storedCursor.backfill_before_uid ?? 0) : 0;
     let backfillComplete = cursorValid && storedCursor ? Boolean(storedCursor.backfill_complete) : false;
-    if (mailbox.exists === 0) {
+    if (target.gmailArchive && shouldReconcile) {
+        const localUids = cursorValid
+            ? await messageRepo.remoteUids(account.id, target.localFolder, target.mailboxPath, uidValidity)
+            : new Set<number>();
+        const missingUids = remoteStates
+            .map((state) => state.uid)
+            .filter((uid) => !localUids.has(uid))
+            .sort((left, right) => left - right);
+        const selectedUids = missingUids.slice(-batchLimit);
+        if (selectedUids.length > 0) {
+            const archiveBatch = await importRange(selectedUids.join(","), true);
+            imported += archiveBatch.imported;
+            backfillBeforeUid = selectedUids[0];
+        }
+        else {
+            backfillBeforeUid = 1;
+        }
+        backfillComplete = missingUids.length <= selectedUids.length;
+    }
+    else if (mailbox.exists === 0) {
         backfillBeforeUid = 1;
         backfillComplete = true;
     }
@@ -202,7 +322,7 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, mailboxPath
         }
         if (!backfillComplete) {
             if (backfillBeforeUid <= 0) {
-                const oldestLocalUid = await mailboxCursorRepo.oldestLocalUid(account.id, localFolder);
+                const oldestLocalUid = await mailboxCursorRepo.oldestLocalUid(account.id, target.localFolder);
                 backfillBeforeUid = oldestLocalUid ?? Math.min(cursorUid + 1, highestKnownUid + 1);
             }
             if (backfillBeforeUid <= 1) {
@@ -219,18 +339,35 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, mailboxPath
             }
         }
     }
+    if (!cursorValid && mailbox.exists > 0 && remoteStates.length > 0 && imported === 0) {
+        throw new Error(`邮箱目录 ${target.mailboxPath} 的新 UID generation 未成功保存任何邮件，已保留旧缓存`);
+    }
     const nextCursorUid = highestKnownUid;
-    await mailboxCursorRepo.set(account.id, mailboxPath, {
-        cursorUid: nextCursorUid,
-        uidValidity,
-        backfillBeforeUid,
-        backfillComplete
+    await db.transaction(async () => {
+        for (const prepared of preparedImports) {
+            const savedMessage = await messageRepo.upsert(prepared.message);
+            if (prepared.attachments)
+                await attachmentRepo.replaceForMessage(savedMessage.id, prepared.attachments);
+        }
+        if (shouldReconcile) {
+            await messageRepo.reconcileRemoteMailbox(account.id, target.localFolder, target.mailboxPath, remoteStates, {
+                uidValidity,
+                resetGeneration: !cursorValid
+            });
+        }
+        await mailboxCursorRepo.set(account.id, target.mailboxPath, {
+            cursorUid: nextCursorUid,
+            uidValidity,
+            backfillBeforeUid,
+            backfillComplete,
+            lastReconcileAt: shouldReconcile ? new Date().toISOString() : undefined
+        });
+        if (target.localFolder === "INBOX")
+            await accountRepo.markSyncCursor(account.id, nextCursorUid, uidValidity);
     });
-    if (localFolder === "INBOX")
-        await accountRepo.markSyncCursor(account.id, nextCursorUid, uidValidity);
     return { imported, cursorUid: nextCursorUid };
 }
-async function syncImapInbox(account: AccountRecord, initialLimit = 30): Promise<{
+async function syncImapAccount(account: AccountRecord, initialLimit = 30): Promise<{
     imported: number;
     cursorUid: number;
 }> {
@@ -255,13 +392,18 @@ async function syncImapInbox(account: AccountRecord, initialLimit = 30): Promise
         await client.connect();
         const attachmentLimit = (await appSettingsRepo.getAttachmentSettings()).max_size_bytes;
         const mailboxes = await client.list();
-        const inboxResult = await syncMailbox(client, account, "INBOX", "INBOX", initialLimit, attachmentLimit);
-        const sentMailbox = findSentMailbox(mailboxes);
-        const sentResult = sentMailbox
-            ? await syncMailbox(client, account, sentMailbox.path, "Sent", initialLimit, attachmentLimit)
-            : { imported: 0, cursorUid: 0 };
+        const gmailLabels = client.capabilities.has("X-GM-EXT-1");
+        const targets = discoverImapSyncTargets(mailboxes, gmailLabels);
+        let imported = 0;
+        let inboxCursorUid = 0;
+        for (const target of targets) {
+            const result = await syncMailbox(client, account, target, initialLimit, attachmentLimit, gmailLabels);
+            imported += result.imported;
+            if (target.localFolder === "INBOX")
+                inboxCursorUid = result.cursorUid;
+        }
         await accountRepo.markSync(account.id, "idle", new Date().toISOString());
-        return { imported: inboxResult.imported + sentResult.imported, cursorUid: inboxResult.cursorUid };
+        return { imported, cursorUid: inboxCursorUid };
     }
     catch (error) {
         await accountRepo.markSync(account.id, "error");
@@ -331,7 +473,9 @@ async function syncPop3Inbox(account: AccountRecord, initialLimit = 30): Promise
                 htmlBody: oversizedMessage ? undefined : htmlText || undefined,
                 sentAt: parsed.date?.toISOString(),
                 flags: [],
-                isRead: false
+                isRead: false,
+                remoteMailbox: "POP3",
+                remoteUidValidity: item.uidl
             });
             if (!oversizedMessage) {
                 await attachmentRepo.replaceForMessage(savedMessage.id, parsed.attachments
@@ -361,7 +505,7 @@ async function syncPop3Inbox(account: AccountRecord, initialLimit = 30): Promise
 export async function syncInbox(account: AccountRecord, initialLimit = 30): Promise<{ imported: number; cursorUid: number }> {
     return account.incoming_protocol === "pop3"
         ? syncPop3Inbox(account, initialLimit)
-        : syncImapInbox(account, initialLimit);
+        : syncImapAccount(account, initialLimit);
 }
 export async function sendMail(input: {
     account: AccountRecord;

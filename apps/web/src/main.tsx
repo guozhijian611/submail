@@ -114,6 +114,8 @@ type Message = {
   is_archived: number;
   is_deleted: number;
   folder: string;
+  remote_mailbox?: string | null;
+  remote_uid_validity?: string | null;
   message_id?: string | null;
   in_reply_to?: string | null;
   reference_ids?: string;
@@ -597,11 +599,11 @@ const folderLabels: Record<MailFolder, string> = {
   TRASH: "垃圾箱"
 };
 
-function Sidebar({ state, setState, navigate, refresh }: {
+function Sidebar({ state, setState, navigate, onSync }: {
   state: State;
   setState: (value: Partial<State>) => void;
   navigate: (value: Partial<State>) => void;
-  refresh: () => void;
+  onSync: () => void;
 }) {
   const navItems: Array<{ folder: MailFolder; icon: React.ReactNode; count?: number }> = [
     { folder: "INBOX", icon: <Inbox size={16} />, count: state.inboxUnreadCount },
@@ -664,8 +666,8 @@ function Sidebar({ state, setState, navigate, refresh }: {
         ))}
       </div>
 
-      <button className="secondaryAction" onClick={refresh}>
-        <RefreshCw size={15} /> 刷新列表
+      <button className="secondaryAction" onClick={onSync}>
+        <RefreshCw size={15} /> 同步邮箱
       </button>
     </aside>
   );
@@ -1228,6 +1230,7 @@ function Preview({
     );
   }
   const account = accounts.find((item) => item.id === message.account_id);
+  const remoteSpecialFolder = Boolean(message.remote_mailbox) && (message.folder === "Archive" || message.folder === "Trash");
   const originalEmailAttachments = attachments.filter((attachment) => attachment.content_type.split(";", 1)[0].toLowerCase() === "message/rfc822");
   return (
     <section className="preview">
@@ -1244,11 +1247,15 @@ function Preview({
             </button>
           )}
           {message.folder === "Drafts" ? (
-            <>
-              <button className="toolbarButton" onClick={() => onEditDraft(message)}><MessageSquareText size={16} /> 编辑</button>
-              <button className="composeButton" onClick={() => onSendDraft(message)}><Send size={16} /> 发送</button>
-              <button className="toolbarIcon" title="删除草稿" onClick={() => onDeleteDraft(message)}><Trash2 size={18} /></button>
-            </>
+            message.remote_mailbox ? (
+              <span className="remoteDraftBadge" title="远端草稿同步为只读，避免本地编辑覆盖服务商版本">远端草稿 · 只读</span>
+            ) : (
+              <>
+                <button className="toolbarButton" onClick={() => onEditDraft(message)}><MessageSquareText size={16} /> 编辑</button>
+                <button className="composeButton" onClick={() => onSendDraft(message)}><Send size={16} /> 发送</button>
+                <button className="toolbarIcon" title="删除草稿" onClick={() => onDeleteDraft(message)}><Trash2 size={18} /></button>
+              </>
+            )
           ) : (
             <>
               <button className="toolbarButton" onClick={() => onReply(message)}><Reply size={16} /> 回复</button>
@@ -1262,12 +1269,18 @@ function Preview({
               <button className={`toolbarIcon ${message.is_starred ? "activeIcon" : ""}`} title={message.is_starred ? "取消星标" : "星标"} onClick={() => onUpdateMessageState(message, { isStarred: !message.is_starred })}>
                 <Star size={18} />
               </button>
-              <button className="toolbarIcon" title={message.is_archived ? "移回收件箱" : "归档"} onClick={() => onUpdateMessageState(message, { isArchived: !message.is_archived })}>
-                <Archive size={18} />
-              </button>
-              <button className="toolbarIcon" title={message.is_deleted ? "恢复" : "删除"} onClick={() => onUpdateMessageState(message, { isDeleted: !message.is_deleted })}>
-                {message.is_deleted ? <Inbox size={18} /> : <Trash2 size={18} />}
-              </button>
+              {remoteSpecialFolder ? (
+                <span className="remoteDraftBadge" title="远端归档和垃圾箱目录当前只同步读取，避免本地状态与服务商目录冲突">远端目录 · 只读</span>
+              ) : (
+                <>
+                  <button className="toolbarIcon" title={message.is_archived ? "移回收件箱" : "归档"} onClick={() => onUpdateMessageState(message, { isArchived: !message.is_archived })}>
+                    <Archive size={18} />
+                  </button>
+                  <button className="toolbarIcon" title={message.is_deleted ? "恢复" : "删除"} onClick={() => onUpdateMessageState(message, { isDeleted: !message.is_deleted })}>
+                    {message.is_deleted ? <Inbox size={18} /> : <Trash2 size={18} />}
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -3407,7 +3420,7 @@ function App() {
 
   return (
     <main className="appShell">
-      <Sidebar state={state} setState={setState} navigate={clearMessageSelection} refresh={load} />
+      <Sidebar state={state} setState={setState} navigate={clearMessageSelection} onSync={runAllSync} />
       <div className="workspace">
         {state.activeView === "mail" ? (
           <Toolbar

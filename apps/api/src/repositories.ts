@@ -249,14 +249,12 @@ export const accountRepo = {
         if (!existing)
             return undefined;
         const normalizedImapHost = normalizeMailboxHost(input.imapHost);
-        const incomingIdentityChanged = existing.email.trim().toLowerCase() !== input.email.trim().toLowerCase()
-            || existing.username !== input.username
+        const incomingMailboxChanged = existing.username !== input.username
             || existing.incoming_protocol !== input.incomingProtocol
-            || existing.auth_mode !== input.authMode
             || existing.imap_host !== normalizedImapHost
             || existing.imap_port !== input.imapPort
-            || existing.imap_secure !== (input.imapSecure ? 1 : 0)
-            || Boolean(input.password);
+            || existing.imap_secure !== (input.imapSecure ? 1 : 0);
+        const incomingCredentialsChanged = existing.auth_mode !== input.authMode || Boolean(input.password);
         const next: AccountRecord = {
             ...existing,
             email: input.email,
@@ -273,12 +271,13 @@ export const accountRepo = {
             smtp_host: normalizeMailboxHost(input.smtpHost),
             smtp_port: input.smtpPort,
             smtp_secure: input.smtpSecure ? 1 : 0,
-            sync_status: incomingIdentityChanged ? "idle" : existing.sync_status,
-            sync_cursor_uid: incomingIdentityChanged ? 0 : existing.sync_cursor_uid,
-            sync_uid_validity: incomingIdentityChanged ? null : existing.sync_uid_validity,
+            sync_status: incomingMailboxChanged || incomingCredentialsChanged ? "idle" : existing.sync_status,
+            sync_cursor_uid: incomingMailboxChanged ? 0 : existing.sync_cursor_uid,
+            sync_uid_validity: incomingMailboxChanged ? null : existing.sync_uid_validity,
             updated_at: nowIso()
         };
-        await db.prepare(`
+        await db.transaction(async () => {
+            await db.prepare(`
       UPDATE accounts SET
         email = @email,
         display_name = @display_name,
@@ -299,14 +298,41 @@ export const accountRepo = {
         sync_uid_validity = @sync_uid_validity,
         updated_at = @updated_at
       WHERE id = @id
-    `).run(next);
-        const incomingServerChanged = existing.username !== input.username
-            || existing.incoming_protocol !== input.incomingProtocol
-            || existing.imap_host !== normalizedImapHost
-            || existing.imap_port !== input.imapPort
-            || existing.imap_secure !== (input.imapSecure ? 1 : 0);
-        if (incomingServerChanged)
-            await pop3SeenRepo.clear(id);
+            `).run(next);
+            if (incomingMailboxChanged) {
+                const remoteMessages = await db.prepare(`
+          SELECT id FROM messages
+          WHERE account_id = ? AND (
+            uid IS NOT NULL
+            OR remote_mailbox IS NOT NULL
+            OR id IN (
+              SELECT message_id FROM pop3_seen_messages
+              WHERE account_id = ? AND message_id IS NOT NULL
+            )
+          )
+        `).all(id, id) as Array<{ id: string }>;
+                if (config.dbDriver === "sqlite") {
+                    for (let offset = 0; offset < remoteMessages.length; offset += 250) {
+                        const ids = remoteMessages.slice(offset, offset + 250).map((message) => message.id);
+                        const placeholders = ids.map(() => "?").join(", ");
+                        await db.prepare(`DELETE FROM message_search WHERE message_id IN (${placeholders})`).run(...ids);
+                    }
+                }
+                await db.prepare(`
+          DELETE FROM messages
+          WHERE account_id = ? AND (
+            uid IS NOT NULL
+            OR remote_mailbox IS NOT NULL
+            OR id IN (
+              SELECT message_id FROM pop3_seen_messages
+              WHERE account_id = ? AND message_id IS NOT NULL
+            )
+          )
+        `).run(id, id);
+                await db.prepare("DELETE FROM mailbox_sync_cursors WHERE account_id = ?").run(id);
+                await pop3SeenRepo.clear(id);
+            }
+        });
         return toPublicAccount(next);
     },
     async delete(id: string) {
@@ -379,10 +405,10 @@ export const accountRepo = {
 };
 export const mailboxCursorRepo = {
     async get(accountId: string, mailboxPath: string) {
-        return await db.prepare("SELECT cursor_uid, uid_validity, backfill_before_uid, backfill_complete FROM mailbox_sync_cursors WHERE account_id = ? AND mailbox_path = ?")
-            .get(accountId, mailboxPath) as { cursor_uid: number; uid_validity: string | null; backfill_before_uid: number | null; backfill_complete: number } | undefined;
+        return await db.prepare("SELECT cursor_uid, uid_validity, backfill_before_uid, backfill_complete, last_reconcile_at FROM mailbox_sync_cursors WHERE account_id = ? AND mailbox_path = ?")
+            .get(accountId, mailboxPath) as { cursor_uid: number; uid_validity: string | null; backfill_before_uid: number | null; backfill_complete: number; last_reconcile_at: string | null } | undefined;
     },
-    async oldestLocalUid(accountId: string, folder: "INBOX" | "Sent") {
+    async oldestLocalUid(accountId: string, folder: string) {
         const row = await db.prepare("SELECT MIN(uid) AS uid FROM messages WHERE account_id = ? AND folder = ? AND uid IS NOT NULL")
             .get(accountId, folder) as { uid: number | null } | undefined;
         return row?.uid === null || row?.uid === undefined ? undefined : Number(row.uid);
@@ -392,17 +418,19 @@ export const mailboxCursorRepo = {
         uidValidity: string;
         backfillBeforeUid: number;
         backfillComplete: boolean;
+        lastReconcileAt?: string;
     }) {
         await db.prepare(`
-      INSERT INTO mailbox_sync_cursors (account_id, mailbox_path, cursor_uid, uid_validity, backfill_before_uid, backfill_complete, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO mailbox_sync_cursors (account_id, mailbox_path, cursor_uid, uid_validity, backfill_before_uid, backfill_complete, last_reconcile_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(account_id, mailbox_path) DO UPDATE SET
         cursor_uid = excluded.cursor_uid,
         uid_validity = excluded.uid_validity,
         backfill_before_uid = excluded.backfill_before_uid,
         backfill_complete = excluded.backfill_complete,
+        last_reconcile_at = COALESCE(excluded.last_reconcile_at, last_reconcile_at),
         updated_at = excluded.updated_at
-    `).run(accountId, mailboxPath, input.cursorUid, input.uidValidity, input.backfillBeforeUid, input.backfillComplete ? 1 : 0, nowIso());
+    `).run(accountId, mailboxPath, input.cursorUid, input.uidValidity, input.backfillBeforeUid, input.backfillComplete ? 1 : 0, input.lastReconcileAt ?? null, nowIso());
     }
 };
 export const pop3SeenRepo = {
@@ -706,6 +734,19 @@ export type UpsertMessageInput = {
     sentAt?: string;
     flags?: string[];
     isRead?: boolean;
+    isStarred?: boolean;
+    isArchived?: boolean;
+    isDeleted?: boolean;
+    remoteMailbox?: string;
+    remoteUidValidity?: string;
+};
+export type RemoteMessageState = {
+    uid: number;
+    flags: string[];
+    isRead: boolean;
+    isStarred: boolean;
+    isArchived: boolean;
+    isDeleted: boolean;
 };
 type OutgoingMessageInput = {
     account: AccountRecord;
@@ -735,6 +776,28 @@ function parseStringArray(value: string): string[] {
     }
     catch {
         return [];
+    }
+}
+type MessageStateOverrides = Partial<{
+    isRead: boolean;
+    isStarred: boolean;
+    isArchived: boolean;
+    isDeleted: boolean;
+}>;
+function parseMessageStateOverrides(value: string | null | undefined): MessageStateOverrides {
+    try {
+        const parsed = JSON.parse(value ?? "{}");
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+            return {};
+        const result: MessageStateOverrides = {};
+        for (const key of ["isRead", "isStarred", "isArchived", "isDeleted"] as const) {
+            if (typeof parsed[key] === "boolean")
+                result[key] = parsed[key];
+        }
+        return result;
+    }
+    catch {
+        return {};
     }
 }
 type ThreadMessageMetadata = Pick<MessageRecord,
@@ -1175,6 +1238,41 @@ export const messageRepo = {
     async upsert(input: UpsertMessageInput) {
         const id = input.id ?? nanoid();
         const now = nowIso();
+        const localSent = input.folder === "Sent" && input.uid !== undefined && input.messageId
+            ? await db.prepare(`
+        SELECT id, local_state_overrides FROM messages
+        WHERE account_id = ? AND folder = 'Sent' AND message_id = ? AND uid IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      `).get(input.accountId, input.messageId) as { id: string; local_state_overrides: string } | undefined
+            : undefined;
+        const existingRemote = input.uid !== undefined
+            ? await db.prepare(`
+        SELECT local_state_overrides, remote_mailbox, remote_uid_validity FROM messages
+        WHERE account_id = ? AND folder = ? AND uid = ?
+      `).get(input.accountId, input.folder, input.uid) as {
+                local_state_overrides: string;
+                remote_mailbox: string | null;
+                remote_uid_validity: string | null;
+            } | undefined
+            : undefined;
+        const sameRemoteGeneration = existingRemote
+            && existingRemote.remote_mailbox === (input.remoteMailbox ?? null)
+            && existingRemote.remote_uid_validity === (input.remoteUidValidity ?? null);
+        const stateOverrides = parseMessageStateOverrides(
+            sameRemoteGeneration ? existingRemote.local_state_overrides : localSent?.local_state_overrides
+        );
+        const remoteState = {
+            isRead: Boolean(input.isRead),
+            isStarred: Boolean(input.isStarred),
+            isArchived: Boolean(input.isArchived),
+            isDeleted: Boolean(input.isDeleted)
+        };
+        const effectiveState = {
+            isRead: stateOverrides.isRead ?? remoteState.isRead,
+            isStarred: stateOverrides.isStarred ?? remoteState.isStarred,
+            isArchived: stateOverrides.isArchived ?? remoteState.isArchived,
+            isDeleted: stateOverrides.isDeleted ?? remoteState.isDeleted
+        };
         const record = {
             id,
             account_id: input.accountId,
@@ -1192,22 +1290,20 @@ export const messageRepo = {
             html_body: input.htmlBody ?? null,
             sent_at: input.sentAt ?? null,
             flags: JSON.stringify(input.flags ?? []),
-            is_read: input.isRead ? 1 : 0,
-            is_starred: 0,
-            is_archived: 0,
-            is_deleted: 0,
-            archived_at: null,
-            deleted_at: null,
+            remote_mailbox: input.remoteMailbox ?? null,
+            remote_uid_validity: input.remoteUidValidity ?? null,
+            remote_state: JSON.stringify(remoteState),
+            local_state_overrides: JSON.stringify(stateOverrides),
+            is_read: effectiveState.isRead ? 1 : 0,
+            is_starred: effectiveState.isStarred ? 1 : 0,
+            is_archived: effectiveState.isArchived ? 1 : 0,
+            is_deleted: effectiveState.isDeleted ? 1 : 0,
+            archived_at: effectiveState.isArchived ? now : null,
+            deleted_at: effectiveState.isDeleted ? now : null,
             created_at: now,
             updated_at: now
         };
-        if (input.folder === "Sent" && input.uid !== undefined && input.messageId) {
-            const localSent = await db.prepare(`
-        SELECT id FROM messages
-        WHERE account_id = ? AND folder = 'Sent' AND message_id = ? AND uid IS NULL
-        ORDER BY created_at DESC LIMIT 1
-      `).get(input.accountId, input.messageId) as { id: string } | undefined;
-            if (localSent) {
+        if (localSent) {
                 await db.prepare(`
           UPDATE messages SET
             uid = @uid,
@@ -1222,21 +1318,30 @@ export const messageRepo = {
             html_body = @html_body,
             sent_at = @sent_at,
             flags = @flags,
+            remote_mailbox = @remote_mailbox,
+            remote_uid_validity = @remote_uid_validity,
+            remote_state = @remote_state,
             is_read = @is_read,
+            is_starred = @is_starred,
+            is_archived = @is_archived,
+            is_deleted = @is_deleted,
+            archived_at = @archived_at,
+            deleted_at = @deleted_at,
             updated_at = @updated_at
           WHERE id = @id
         `).run({ ...record, id: localSent.id });
                 await updateMessageSearchIndex(localSent.id);
                 return await this.get(localSent.id) as MessageRecord;
-            }
         }
         await db.prepare(`
       INSERT INTO messages (
         id, account_id, folder, uid, message_id, in_reply_to, reference_ids, subject, sender_name, sender_email,
-        recipients, snippet, text_body, html_body, sent_at, flags, is_read, is_starred, is_archived, is_deleted, archived_at, deleted_at, created_at, updated_at
+        recipients, snippet, text_body, html_body, sent_at, flags, remote_mailbox, remote_uid_validity, remote_state, local_state_overrides,
+        is_read, is_starred, is_archived, is_deleted, archived_at, deleted_at, created_at, updated_at
       ) VALUES (
         @id, @account_id, @folder, @uid, @message_id, @in_reply_to, @reference_ids, @subject, @sender_name, @sender_email,
-        @recipients, @snippet, @text_body, @html_body, @sent_at, @flags, @is_read, @is_starred, @is_archived, @is_deleted, @archived_at, @deleted_at, @created_at, @updated_at
+        @recipients, @snippet, @text_body, @html_body, @sent_at, @flags, @remote_mailbox, @remote_uid_validity, @remote_state, @local_state_overrides,
+        @is_read, @is_starred, @is_archived, @is_deleted, @archived_at, @deleted_at, @created_at, @updated_at
       )
       ON CONFLICT(account_id, folder, uid) DO UPDATE SET
         message_id = excluded.message_id,
@@ -1251,6 +1356,16 @@ export const messageRepo = {
         html_body = excluded.html_body,
         sent_at = excluded.sent_at,
         flags = excluded.flags,
+        remote_mailbox = excluded.remote_mailbox,
+        remote_uid_validity = excluded.remote_uid_validity,
+        remote_state = excluded.remote_state,
+        local_state_overrides = excluded.local_state_overrides,
+        is_read = excluded.is_read,
+        is_starred = excluded.is_starred,
+        is_archived = excluded.is_archived,
+        is_deleted = excluded.is_deleted,
+        archived_at = excluded.archived_at,
+        deleted_at = excluded.deleted_at,
         updated_at = excluded.updated_at
     `).run(record);
         if (input.uid !== undefined) {
@@ -1265,8 +1380,89 @@ export const messageRepo = {
         await updateMessageSearchIndex(saved.id);
         return saved;
     },
+    async reconcileRemoteMailbox(accountId: string, folder: string, remoteMailbox: string, states: RemoteMessageState[], options: {
+        uidValidity: string;
+        resetGeneration: boolean;
+    }) {
+        const remoteByUid = new Map(states.map((state) => [state.uid, state]));
+        return db.transaction(async () => {
+            const local = await db.prepare(`
+        SELECT id, uid, flags, remote_mailbox, remote_uid_validity, remote_state, local_state_overrides,
+               is_read, is_starred, is_archived, is_deleted
+        FROM messages
+        WHERE account_id = ? AND folder = ? AND uid IS NOT NULL
+      `).all(accountId, folder) as Array<Pick<MessageRecord,
+                "id" | "uid" | "flags" | "remote_mailbox" | "remote_uid_validity" | "remote_state" | "local_state_overrides" |
+                "is_read" | "is_starred" | "is_archived" | "is_deleted"
+            >>;
+            let updated = 0;
+            let removed = 0;
+            const now = nowIso();
+            for (const message of local) {
+                const remote = message.uid === null ? undefined : remoteByUid.get(Number(message.uid));
+                const staleGeneration = options.resetGeneration && message.remote_uid_validity !== options.uidValidity;
+                if (!remote || staleGeneration) {
+                    await db.prepare("DELETE FROM messages WHERE id = ?").run(message.id);
+                    if (config.dbDriver === "sqlite")
+                        await db.prepare("DELETE FROM message_search WHERE message_id = ?").run(message.id);
+                    removed += 1;
+                    continue;
+                }
+                const flags = JSON.stringify(remote.flags);
+                const remoteState = JSON.stringify({
+                    isRead: remote.isRead,
+                    isStarred: remote.isStarred,
+                    isArchived: remote.isArchived,
+                    isDeleted: remote.isDeleted
+                });
+                const overrides = parseMessageStateOverrides(message.local_state_overrides);
+                const nextRead = (overrides.isRead ?? remote.isRead) ? 1 : 0;
+                const nextStarred = (overrides.isStarred ?? remote.isStarred) ? 1 : 0;
+                const nextArchived = (overrides.isArchived ?? remote.isArchived) ? 1 : 0;
+                const nextDeleted = (overrides.isDeleted ?? remote.isDeleted) ? 1 : 0;
+                if (message.flags === flags
+                    && message.remote_mailbox === remoteMailbox
+                    && message.remote_uid_validity === options.uidValidity
+                    && message.remote_state === remoteState
+                    && message.is_read === nextRead
+                    && message.is_starred === nextStarred
+                    && message.is_archived === nextArchived
+                    && message.is_deleted === nextDeleted)
+                    continue;
+                await db.prepare(`
+          UPDATE messages SET
+            flags = ?, remote_mailbox = ?, remote_uid_validity = ?, remote_state = ?,
+            is_read = ?, is_starred = ?, is_archived = ?, is_deleted = ?,
+            archived_at = ?, deleted_at = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+                    flags,
+                    remoteMailbox,
+                    options.uidValidity,
+                    remoteState,
+                    nextRead,
+                    nextStarred,
+                    nextArchived,
+                    nextDeleted,
+                    nextArchived ? now : null,
+                    nextDeleted ? now : null,
+                    now,
+                    message.id
+                );
+                updated += 1;
+            }
+            return { updated, removed };
+        });
+    },
+    async remoteUids(accountId: string, folder: string, remoteMailbox: string, uidValidity: string): Promise<Set<number>> {
+        const rows = await db.prepare(`
+      SELECT uid FROM messages
+      WHERE account_id = ? AND folder = ? AND remote_mailbox = ? AND remote_uid_validity = ? AND uid IS NOT NULL
+    `).all(accountId, folder, remoteMailbox, uidValidity) as Array<{ uid: number }>;
+        return new Set(rows.map((row) => Number(row.uid)));
+    },
     async markRead(id: string, isRead: boolean) {
-        await db.prepare("UPDATE messages SET is_read = ?, updated_at = ? WHERE id = ?").run(isRead ? 1 : 0, nowIso(), id);
+        await this.updateState(id, { isRead });
     },
     async createDraft(input: OutgoingMessageInput) {
         return await this.upsert({
@@ -1285,7 +1481,7 @@ export const messageRepo = {
     },
     async updateDraft(id: string, input: OutgoingMessageInput) {
         const existing = await this.get(id);
-        if (!existing || existing.folder !== "Drafts")
+        if (!existing || existing.folder !== "Drafts" || existing.remote_mailbox)
             return undefined;
         const now = nowIso();
         await db.prepare(`
@@ -1334,12 +1530,17 @@ export const messageRepo = {
     },
     async convertDraftToSent(id: string, messageId?: string) {
         const existing = await this.get(id);
-        if (!existing || existing.folder !== "Drafts")
+        if (!existing || existing.folder !== "Drafts" || existing.remote_mailbox)
             return undefined;
         const now = nowIso();
         await db.prepare(`
       UPDATE messages SET
         folder = 'Sent',
+        uid = NULL,
+        remote_mailbox = NULL,
+        remote_uid_validity = NULL,
+        remote_state = '{}',
+        local_state_overrides = '{}',
         message_id = ?,
         sent_at = ?,
         flags = ?,
@@ -1355,7 +1556,7 @@ export const messageRepo = {
         return await this.get(id);
     },
     async deleteDraft(id: string) {
-        const result = await db.prepare("DELETE FROM messages WHERE id = ? AND folder = 'Drafts'").run(id);
+        const result = await db.prepare("DELETE FROM messages WHERE id = ? AND folder = 'Drafts' AND remote_mailbox IS NULL").run(id);
         if (config.dbDriver === "sqlite")
             await db.prepare("DELETE FROM message_search WHERE message_id = ?").run(id);
         return result.changes > 0;
@@ -1386,6 +1587,19 @@ export const messageRepo = {
             isDeleted = 0;
             deletedAt = null;
         }
+        const stateOverrides = parseMessageStateOverrides(existing.local_state_overrides);
+        if (input.isRead !== undefined)
+            stateOverrides.isRead = input.isRead;
+        if (input.isStarred !== undefined)
+            stateOverrides.isStarred = input.isStarred;
+        if (input.isArchived !== undefined)
+            stateOverrides.isArchived = input.isArchived;
+        if (input.isDeleted !== undefined)
+            stateOverrides.isDeleted = input.isDeleted;
+        if (input.isDeleted !== undefined)
+            stateOverrides.isArchived = false;
+        if (input.isArchived === true)
+            stateOverrides.isDeleted = false;
         const next = {
             is_read: input.isRead === undefined ? existing.is_read : input.isRead ? 1 : 0,
             is_starred: input.isStarred === undefined ? existing.is_starred : input.isStarred ? 1 : 0,
@@ -1393,6 +1607,7 @@ export const messageRepo = {
             is_deleted: isDeleted,
             archived_at: archivedAt,
             deleted_at: deletedAt,
+            local_state_overrides: JSON.stringify(stateOverrides),
             updated_at: nowIso(),
             id
         };
@@ -1404,6 +1619,7 @@ export const messageRepo = {
         is_deleted = @is_deleted,
         archived_at = @archived_at,
         deleted_at = @deleted_at,
+        local_state_overrides = @local_state_overrides,
         updated_at = @updated_at
       WHERE id = @id
     `).run(next);

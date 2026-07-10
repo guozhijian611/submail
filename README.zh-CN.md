@@ -54,7 +54,7 @@
 ## 已有能力
 
 - **多邮箱管理：**新增、编辑、删除、备注、IMAP/POP3/SMTP 连接测试；常见邮箱服务商参数推荐；已验证 Send As 别名。
-- **增量同步：**IMAP UID 与 POP3 UIDL 游标、定时任务、有限重试、并发限制和同步记录。
+- **增量同步：**IMAP UID 与 POP3 UIDL 游标、远端已读/星标状态对账、特殊目录发现、定时任务、有限重试、并发限制和同步记录。
 - **集中处理：**统一收件箱、已发送、草稿、星标、归档、垃圾箱、会话聚合、高级搜索和批量操作。
 - **附件：**同步后集中存储，浏览器仅在打开预览或下载时请求附件内容；支持 `.eml` 解析、保留策略和多种格式在线预览。
 - **AI 邮件助手：**支持 OpenAI-compatible 服务，可总结邮件、推荐回信和生成邮件；结果不会自动发送。
@@ -160,7 +160,7 @@ curl --fail-with-body 'https://mail.example.com/api/send' \
 
 ## 当前边界
 
-- IMAP 可读取 INBOX 和服务商公开的 Sent 目录；POP3 只能读取收件箱。
+- IMAP 会同步 INBOX 以及服务商可发现的 Sent、Drafts、Trash、Archive 特殊目录，并对账远端已读/星标状态；Gmail 可用时从 All Mail 标签识别已归档邮件。POP3 仍只能读取收件箱。
 - 已读、星标、归档、删除等状态目前只保存在本地，不回写 IMAP。
 - 尚未支持 Gmail/Microsoft OAuth、DKIM 签名、DSN 退信和队列面板。
 - SQLite 与 MySQL 之间不会自动迁移已有数据。

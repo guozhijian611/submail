@@ -45,7 +45,7 @@
 ## Features
 
 - **Mail accounts:** IMAP or POP3 receive, SMTP send, connection tests, provider presets, app-password guidance, and verified Send As aliases.
-- **Incremental sync:** IMAP UID and POP3 UIDL cursors, scheduled jobs, bounded retries, concurrency limits, and sync history.
+- **Incremental sync:** IMAP UID and POP3 UIDL cursors, remote read/star reconciliation, discoverable special folders, scheduled jobs, bounded retries, concurrency limits, and sync history.
 - **Unified workflow:** Inbox, sent, drafts, starred, archived, trash, conversation threading, advanced search, and bulk actions.
 - **Attachments:** Centralized storage after sync, on-demand browser retrieval, `.eml` parsing, retention settings, and broad in-browser preview support.
 - **AI assistance:** OpenAI-compatible providers for summaries, suggested replies, and email composition. Generated content is placed in the editor and is never sent automatically.
@@ -200,7 +200,7 @@ flowchart LR
 
 ## Current boundaries
 
-- IMAP can read INBOX and the provider's public Sent folder; POP3 can read INBOX only.
+- IMAP synchronizes INBOX plus discoverable Sent, Drafts, Trash, and Archive folders, including remote read/star flags. Gmail archives are derived from All Mail labels when available. POP3 can read INBOX only.
 - Read, star, archive, and delete state is currently local and is not written back to IMAP.
 - Gmail and Microsoft OAuth, DKIM signing, DSN bounce processing, and a queue dashboard are not implemented yet.
 - SQLite and MySQL data are not automatically migrated between drivers.

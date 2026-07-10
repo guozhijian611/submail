@@ -859,6 +859,15 @@ export function routes(): Router {
     }));
     router.patch("/api/messages/bulk-state", asyncHandler(async (req, res) => {
         const input = bulkUpdateMessageStateSchema.parse(req.body);
+        if (input.state.isArchived !== undefined || input.state.isDeleted !== undefined) {
+            for (const id of [...new Set(input.ids)]) {
+                const existing = await messageRepo.get(id);
+                if (existing?.remote_mailbox && (existing.folder === "Archive" || existing.folder === "Trash")) {
+                    res.status(409).json({ error: "远端归档和垃圾箱邮件当前为只读，请在邮箱服务商中移动或删除" });
+                    return;
+                }
+            }
+        }
         const messages = [];
         for (const id of [...new Set(input.ids)]) {
             const message = await messageRepo.updateState(id, input.state);
@@ -869,6 +878,13 @@ export function routes(): Router {
     }));
     router.patch("/api/messages/:id/state", asyncHandler(async (req, res) => {
         const input = updateMessageStateSchema.parse(req.body);
+        const existing = await messageRepo.get(String(req.params.id));
+        if (existing?.remote_mailbox
+            && (existing.folder === "Archive" || existing.folder === "Trash")
+            && (input.isArchived !== undefined || input.isDeleted !== undefined)) {
+            res.status(409).json({ error: "远端归档和垃圾箱邮件当前为只读，请在邮箱服务商中移动或删除" });
+            return;
+        }
         const message = await messageRepo.updateState(String(req.params.id), input);
         if (!message) {
             res.status(404).json({ error: "Message not found" });
@@ -904,6 +920,11 @@ export function routes(): Router {
     }));
     router.patch("/api/drafts/:id", asyncHandler(async (req, res) => {
         const input = draftMailSchema.parse(req.body);
+        const existingDraft = await messageRepo.get(String(req.params.id));
+        if (existingDraft?.folder === "Drafts" && existingDraft.remote_mailbox) {
+            res.status(409).json({ error: "远端草稿当前为只读，请在邮箱服务商中编辑或删除" });
+            return;
+        }
         const account = await accountRepo.get(input.accountId);
         if (!account) {
             res.status(404).json({ error: "Account not found" });
@@ -933,6 +954,11 @@ export function routes(): Router {
         res.json({ message, attachments: await attachmentRepo.listForMessage(message.id) });
     }));
     router.delete("/api/drafts/:id", asyncHandler(async (req, res) => {
+        const draft = await messageRepo.get(String(req.params.id));
+        if (draft?.folder === "Drafts" && draft.remote_mailbox) {
+            res.status(409).json({ error: "远端草稿当前为只读，请在邮箱服务商中删除" });
+            return;
+        }
         const deleted = await messageRepo.deleteDraft(String(req.params.id));
         if (!deleted) {
             res.status(404).json({ error: "Draft not found" });
@@ -944,6 +970,10 @@ export function routes(): Router {
         const draft = await messageRepo.get(String(req.params.id));
         if (!draft || draft.folder !== "Drafts") {
             res.status(404).json({ error: "Draft not found" });
+            return;
+        }
+        if (draft.remote_mailbox) {
+            res.status(409).json({ error: "远端草稿当前为只读，请在邮箱服务商中发送" });
             return;
         }
         const account = await accountRepo.get(draft.account_id);

@@ -39,6 +39,10 @@ export type MessageRecord = {
   html_body: string | null;
   sent_at: string | null;
   flags: string;
+  remote_mailbox: string | null;
+  remote_uid_validity: string | null;
+  remote_state: string;
+  local_state_overrides: string;
   is_read: number;
   is_starred: number;
   is_archived: number;

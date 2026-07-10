@@ -869,6 +869,19 @@ button:disabled {
   gap: 8px;
 }
 
+.remoteDraftBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #52625e;
+  background: #f4f7f6;
+  border: 1px solid #d9e1df;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .preview article {
   margin-top: 22px;
   color: #2f3c39;
