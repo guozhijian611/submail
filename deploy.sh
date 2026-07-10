@@ -175,6 +175,13 @@ if [[ "${ready}" != "true" ]]; then
   exit 1
 fi
 
+PDF_WORKER_HEADERS="$(docker compose exec -T web wget -S -O /dev/null http://127.0.0.1:8080/vendor/pdf/pdf.worker.mjs 2>&1)"
+if ! printf '%s\n' "${PDF_WORKER_HEADERS}" | grep -qi 'Content-Type: application/javascript'; then
+  printf '\n部署健康检查失败：PDF worker 未以 application/javascript 提供。\n' >&2
+  printf '%s\n' "${PDF_WORKER_HEADERS}" >&2
+  exit 1
+fi
+
 printf '\nSubmail 已启动。\n'
 printf '本机网关：http://%s:%s\n' "${BIND_ADDRESS}" "${HTTP_PORT}"
 if [[ "${BIND_ADDRESS}" == "127.0.0.1" || "${BIND_ADDRESS}" == "localhost" ]]; then
