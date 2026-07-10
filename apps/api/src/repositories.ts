@@ -207,6 +207,23 @@ export const accountRepo = {
     async internalList() {
         return await db.prepare("SELECT * FROM accounts ORDER BY created_at ASC").all() as AccountRecord[];
     },
+    async incomingIdentityMatches(snapshot: AccountRecord) {
+        const lockClause = config.dbDriver === "mysql" ? " FOR UPDATE" : "";
+        const current = await db.prepare(`
+      SELECT username, password_cipher, incoming_protocol, auth_mode, imap_host, imap_port, imap_secure
+      FROM accounts WHERE id = ?${lockClause}
+    `).get(snapshot.id) as Pick<AccountRecord,
+            "username" | "password_cipher" | "incoming_protocol" | "auth_mode" | "imap_host" | "imap_port" | "imap_secure"
+        > | undefined;
+        return Boolean(current)
+            && current!.username === snapshot.username
+            && current!.password_cipher === snapshot.password_cipher
+            && current!.incoming_protocol === snapshot.incoming_protocol
+            && current!.auth_mode === snapshot.auth_mode
+            && current!.imap_host === snapshot.imap_host
+            && Number(current!.imap_port) === Number(snapshot.imap_port)
+            && Number(current!.imap_secure) === Number(snapshot.imap_secure);
+    },
     async create(input: CreateAccountInput) {
         const id = nanoid();
         const now = nowIso();
@@ -407,6 +424,26 @@ export const mailboxCursorRepo = {
     async get(accountId: string, mailboxPath: string) {
         return await db.prepare("SELECT cursor_uid, uid_validity, backfill_before_uid, backfill_complete, last_reconcile_at FROM mailbox_sync_cursors WHERE account_id = ? AND mailbox_path = ?")
             .get(accountId, mailboxPath) as { cursor_uid: number; uid_validity: string | null; backfill_before_uid: number | null; backfill_complete: number; last_reconcile_at: string | null } | undefined;
+    },
+    async matchesSnapshot(accountId: string, mailboxPath: string, expected: {
+        cursor_uid: number;
+        uid_validity: string | null;
+        backfill_before_uid: number | null;
+        backfill_complete: number;
+        last_reconcile_at: string | null;
+    } | undefined) {
+        const lockClause = config.dbDriver === "mysql" ? " FOR UPDATE" : "";
+        const current = await db.prepare(`
+      SELECT cursor_uid, uid_validity, backfill_before_uid, backfill_complete, last_reconcile_at
+      FROM mailbox_sync_cursors WHERE account_id = ? AND mailbox_path = ?${lockClause}
+    `).get(accountId, mailboxPath) as typeof expected;
+        if (!expected || !current)
+            return expected === current;
+        return Number(current.cursor_uid) === Number(expected.cursor_uid)
+            && current.uid_validity === expected.uid_validity
+            && Number(current.backfill_before_uid ?? 0) === Number(expected.backfill_before_uid ?? 0)
+            && Boolean(current.backfill_complete) === Boolean(expected.backfill_complete)
+            && current.last_reconcile_at === expected.last_reconcile_at;
     },
     async oldestLocalUid(accountId: string, folder: string) {
         const row = await db.prepare("SELECT MIN(uid) AS uid FROM messages WHERE account_id = ? AND folder = ? AND uid IS NOT NULL")
@@ -1303,7 +1340,7 @@ export const messageRepo = {
             created_at: now,
             updated_at: now
         };
-        if (localSent) {
+        if (localSent && !existingRemote) {
                 await db.prepare(`
           UPDATE messages SET
             uid = @uid,
@@ -1380,9 +1417,40 @@ export const messageRepo = {
         await updateMessageSearchIndex(saved.id);
         return saved;
     },
+    async removeStaleRemoteIdentity(accountId: string, folder: string, remoteMailbox: string, uidValidity: string, options: {
+        adoptLegacyIdentity: boolean;
+    }) {
+        const unknownIdentityClause = options.adoptLegacyIdentity
+            ? ""
+            : "remote_mailbox IS NULL OR remote_uid_validity IS NULL OR";
+        const staleRows = await db.prepare(`
+      SELECT id FROM messages
+      WHERE account_id = ? AND folder = ? AND uid IS NOT NULL AND (
+        ${unknownIdentityClause}
+        (remote_mailbox IS NOT NULL AND remote_mailbox != ?)
+        OR (remote_uid_validity IS NOT NULL AND remote_uid_validity != ?)
+      )
+    `).all(accountId, folder, remoteMailbox, uidValidity) as Array<{ id: string }>;
+        if (config.dbDriver === "sqlite") {
+            for (let offset = 0; offset < staleRows.length; offset += 250) {
+                const ids = staleRows.slice(offset, offset + 250).map((message) => message.id);
+                const placeholders = ids.map(() => "?").join(", ");
+                await db.prepare(`DELETE FROM message_search WHERE message_id IN (${placeholders})`).run(...ids);
+            }
+        }
+        const result = await db.prepare(`
+      DELETE FROM messages
+      WHERE account_id = ? AND folder = ? AND uid IS NOT NULL AND (
+        ${unknownIdentityClause}
+        (remote_mailbox IS NOT NULL AND remote_mailbox != ?)
+        OR (remote_uid_validity IS NOT NULL AND remote_uid_validity != ?)
+      )
+    `).run(accountId, folder, remoteMailbox, uidValidity);
+        return result.changes;
+    },
     async reconcileRemoteMailbox(accountId: string, folder: string, remoteMailbox: string, states: RemoteMessageState[], options: {
         uidValidity: string;
-        resetGeneration: boolean;
+        adoptLegacyIdentity: boolean;
     }) {
         const remoteByUid = new Map(states.map((state) => [state.uid, state]));
         return db.transaction(async () => {
@@ -1400,8 +1468,12 @@ export const messageRepo = {
             const now = nowIso();
             for (const message of local) {
                 const remote = message.uid === null ? undefined : remoteByUid.get(Number(message.uid));
-                const staleGeneration = options.resetGeneration && message.remote_uid_validity !== options.uidValidity;
-                if (!remote || staleGeneration) {
+                const missingRemoteIdentity = !options.adoptLegacyIdentity
+                    && (message.remote_mailbox === null || message.remote_uid_validity === null);
+                const staleRemoteIdentity = missingRemoteIdentity
+                    || (message.remote_mailbox !== null && message.remote_mailbox !== remoteMailbox)
+                    || (message.remote_uid_validity !== null && message.remote_uid_validity !== options.uidValidity);
+                if (!remote || staleRemoteIdentity) {
                     await db.prepare("DELETE FROM messages WHERE id = ?").run(message.id);
                     if (config.dbDriver === "sqlite")
                         await db.prepare("DELETE FROM message_search WHERE message_id = ?").run(message.id);

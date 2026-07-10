@@ -45,7 +45,7 @@ function sizeLabel(value: number): string {
 type LocalMailboxFolder = "INBOX" | "Sent" | "Drafts" | "Trash" | "Archive";
 type PreparedImapImport = {
     message: UpsertMessageInput;
-    attachments?: Array<{
+    attachments: Array<{
         filename: string;
         contentType: string;
         size: number;
@@ -53,6 +53,27 @@ type PreparedImapImport = {
         content: Buffer;
     }>;
 };
+const maxPreparedImapBytes = 64 * 1024 * 1024;
+class StaleMailboxSyncError extends Error {
+}
+export function selectImapPreparationBatch(messages: FetchMessageObject[], selection: "oldest" | "newest", byteBudget = maxPreparedImapBytes): FetchMessageObject[] {
+    const orderedMessages = selection === "newest" ? [...messages].reverse() : messages;
+    const selectedMessages: FetchMessageObject[] = [];
+    let plannedBytes = 0;
+    for (const message of orderedMessages) {
+        const reportedSize = Number(message.size ?? 0);
+        const estimatedBytes = reportedSize > config.maxIncomingMessageBytes
+            ? 1024
+            : reportedSize > 0
+                ? reportedSize
+                : config.maxIncomingMessageBytes;
+        if (selectedMessages.length > 0 && plannedBytes + estimatedBytes > byteBudget)
+            break;
+        selectedMessages.push(message);
+        plannedBytes += estimatedBytes;
+    }
+    return selection === "newest" ? selectedMessages.reverse() : selectedMessages;
+}
 export type ImapSyncTarget = {
     mailboxPath: string;
     localFolder: LocalMailboxFolder;
@@ -183,17 +204,21 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
         || Date.now() - lastReconcileAt >= 6 * 60 * 60 * 1000;
     const preparedImports: PreparedImapImport[] = [];
 
-    async function importRange(fetchRange: string, useUidRange: boolean): Promise<{ imported: number; minUid: number; maxUid: number }> {
-        const messages: FetchMessageObject[] = [];
-        let minUid = Number.POSITIVE_INFINITY;
-        let maxUid = 0;
+    async function importRange(fetchRange: string | number[], useUidRange: boolean, selection: "oldest" | "newest"): Promise<{
+        imported: number;
+        processed: number;
+        minUid: number;
+        maxUid: number;
+    }> {
+        const fetchedMessages: FetchMessageObject[] = [];
         let imported = 0;
         for await (const message of client.fetch(fetchRange, { uid: true, envelope: true, flags: true, labels: gmailLabels, size: true }, { uid: useUidRange })) {
-            minUid = Math.min(minUid, message.uid);
-            maxUid = Math.max(maxUid, message.uid);
-            if (belongsToTarget(message, target))
-                messages.push(message);
+            fetchedMessages.push(message);
         }
+        const selectedMessages = selectImapPreparationBatch(fetchedMessages, selection);
+        const minUid = selectedMessages.reduce((value, message) => Math.min(value, message.uid), Number.POSITIVE_INFINITY);
+        const maxUid = selectedMessages.reduce((value, message) => Math.max(value, message.uid), 0);
+        const messages = selectedMessages.filter((message) => belongsToTarget(message, target));
         // Finish the FETCH iterator before fetchOne calls on the same connection.
         for (const message of messages) {
             const remoteState = remoteMessageState(message, target);
@@ -218,7 +243,8 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
                         isDeleted: remoteState.isDeleted,
                         remoteMailbox: target.mailboxPath,
                         remoteUidValidity: uidValidity
-                    }
+                    },
+                    attachments: []
                 });
                 imported += 1;
                 continue;
@@ -271,6 +297,7 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
         }
         return {
             imported,
+            processed: selectedMessages.length,
             minUid: Number.isFinite(minUid) ? minUid : 0,
             maxUid
         };
@@ -284,6 +311,7 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
         }
     }
     let imported = 0;
+    let nextCursorUid = cursorUid;
     let backfillBeforeUid = cursorValid && storedCursor ? Number(storedCursor.backfill_before_uid ?? 0) : 0;
     let backfillComplete = cursorValid && storedCursor ? Boolean(storedCursor.backfill_complete) : false;
     if (target.gmailArchive && shouldReconcile) {
@@ -296,31 +324,49 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
             .sort((left, right) => left - right);
         const selectedUids = missingUids.slice(-batchLimit);
         if (selectedUids.length > 0) {
-            const archiveBatch = await importRange(selectedUids.join(","), true);
+            const archiveBatch = await importRange(selectedUids, true, "newest");
             imported += archiveBatch.imported;
-            backfillBeforeUid = selectedUids[0];
+            backfillBeforeUid = archiveBatch.minUid || selectedUids[0];
+            backfillComplete = missingUids.length <= archiveBatch.processed;
         }
         else {
             backfillBeforeUid = 1;
+            backfillComplete = true;
         }
-        backfillComplete = missingUids.length <= selectedUids.length;
+        nextCursorUid = highestKnownUid;
     }
     else if (mailbox.exists === 0) {
         backfillBeforeUid = 1;
         backfillComplete = true;
+        nextCursorUid = 0;
     }
     else if (cursorUid === 0) {
-        const initial = await importRange(`${Math.max(1, mailbox.exists - batchLimit + 1)}:*`, false);
+        const initial = await importRange(`${Math.max(1, mailbox.exists - batchLimit + 1)}:*`, false, "newest");
         imported += initial.imported;
         backfillBeforeUid = initial.minUid || highestKnownUid + 1;
         backfillComplete = backfillBeforeUid <= 1;
+        nextCursorUid = initial.maxUid || highestKnownUid;
     }
     else {
+        let processedForward = false;
         if (cursorUid < highestKnownUid) {
-            const forward = await importRange(`${cursorUid + 1}:*`, true);
-            imported += forward.imported;
+            const searched = await client.search({ uid: `${cursorUid + 1}:*` }, { uid: true });
+            const forwardUids = (searched || [])
+                .map((uid) => Number(uid))
+                .filter((uid) => Number.isFinite(uid) && uid > cursorUid)
+                .sort((left, right) => left - right)
+                .slice(0, batchLimit);
+            if (forwardUids.length > 0) {
+                const forward = await importRange(forwardUids, true, "oldest");
+                imported += forward.imported;
+                nextCursorUid = forward.maxUid || cursorUid;
+                processedForward = forward.processed > 0;
+            }
+            else {
+                nextCursorUid = highestKnownUid;
+            }
         }
-        if (!backfillComplete) {
+        if (!processedForward && !backfillComplete) {
             if (backfillBeforeUid <= 0) {
                 const oldestLocalUid = await mailboxCursorRepo.oldestLocalUid(account.id, target.localFolder);
                 backfillBeforeUid = oldestLocalUid ?? Math.min(cursorUid + 1, highestKnownUid + 1);
@@ -332,27 +378,32 @@ async function syncMailbox(client: ImapFlow, account: AccountRecord, target: Ima
             else {
                 const backfillEndUid = backfillBeforeUid - 1;
                 const backfillStartUid = Math.max(1, backfillEndUid - batchLimit + 1);
-                const backfill = await importRange(`${backfillStartUid}:${backfillEndUid}`, true);
+                const backfill = await importRange(`${backfillStartUid}:${backfillEndUid}`, true, "newest");
                 imported += backfill.imported;
-                backfillBeforeUid = backfillStartUid;
-                backfillComplete = backfillStartUid <= 1;
+                backfillBeforeUid = backfill.minUid || backfillStartUid;
+                backfillComplete = backfillBeforeUid <= 1;
             }
         }
     }
     if (!cursorValid && mailbox.exists > 0 && remoteStates.length > 0 && imported === 0) {
         throw new Error(`邮箱目录 ${target.mailboxPath} 的新 UID generation 未成功保存任何邮件，已保留旧缓存`);
     }
-    const nextCursorUid = highestKnownUid;
     await db.transaction(async () => {
+        if (!await accountRepo.incomingIdentityMatches(account))
+            throw new StaleMailboxSyncError("邮箱连接信息已更新，本次旧连接同步结果已丢弃");
+        if (!await mailboxCursorRepo.matchesSnapshot(account.id, target.mailboxPath, storedCursor))
+            throw new StaleMailboxSyncError(`邮箱目录 ${target.mailboxPath} 已由另一同步任务更新，本次过期结果已丢弃`);
+        await messageRepo.removeStaleRemoteIdentity(account.id, target.localFolder, target.mailboxPath, uidValidity, {
+            adoptLegacyIdentity: cursorValid
+        });
         for (const prepared of preparedImports) {
             const savedMessage = await messageRepo.upsert(prepared.message);
-            if (prepared.attachments)
-                await attachmentRepo.replaceForMessage(savedMessage.id, prepared.attachments);
+            await attachmentRepo.replaceForMessage(savedMessage.id, prepared.attachments);
         }
         if (shouldReconcile) {
             await messageRepo.reconcileRemoteMailbox(account.id, target.localFolder, target.mailboxPath, remoteStates, {
                 uidValidity,
-                resetGeneration: !cursorValid
+                adoptLegacyIdentity: cursorValid
             });
         }
         await mailboxCursorRepo.set(account.id, target.mailboxPath, {
@@ -406,7 +457,9 @@ async function syncImapAccount(account: AccountRecord, initialLimit = 30): Promi
         return { imported, cursorUid: inboxCursorUid };
     }
     catch (error) {
-        await accountRepo.markSync(account.id, "error");
+        await accountRepo.markSync(account.id, error instanceof StaleMailboxSyncError ? "idle" : "error");
+        if (error instanceof StaleMailboxSyncError)
+            throw error;
         throw new Error(connectionError(account, error, "IMAP", password));
     }
     finally {
