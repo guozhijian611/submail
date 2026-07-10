@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/guozhijian611/submail/security/advisories/new
+    about: Use a private security advisory instead of a public issue.
+  - name: Ask the community
+    url: https://github.com/guozhijian611/submail/discussions
+    about: Use Discussions for setup questions and ideas that are not yet actionable issues.

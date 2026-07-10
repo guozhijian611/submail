@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a focused improvement to Submail.
+title: "[Feature]: "
+labels: [enhancement, needs-triage]
+body:
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I checked the roadmap and existing issues first.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What workflow is difficult or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed outcome
+      description: Describe the user-visible result, not only an implementation detail.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+
+  - type: dropdown
+    attributes:
+      label: Area
+      options:
+        - Mail sync and providers
+        - Web inbox and composer
+        - MCP and API
+        - AI and translation
+        - Attachments
+        - Deployment and operations
+        - Documentation
+        - Other
+    validations:
+      required: true

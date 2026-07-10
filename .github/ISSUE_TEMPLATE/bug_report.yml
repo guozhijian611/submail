@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem in Submail.
+title: "[Bug]: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Submail. Remove mailbox addresses, message content, credentials, API keys, and other private data before submitting.
+
+  - type: checkboxes
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and did not find the same problem.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+
+  - type: input
+    attributes:
+      label: Submail version or commit
+      placeholder: v0.1.0 or a commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: Deployment mode
+      options:
+        - Docker + SQLite
+        - Docker + bundled MySQL
+        - Docker + external MySQL
+        - Local Node.js development
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Describe the observed result and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Never include passwords, tokens, private messages, real addresses, or attachment contents.
