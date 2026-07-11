@@ -42,7 +42,7 @@ function truncateUtf8(value: string, maxBytes: number): string {
 function sizeLabel(value: number): string {
     return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
-type LocalMailboxFolder = "INBOX" | "Sent" | "Drafts" | "Trash" | "Archive";
+type LocalMailboxFolder = "INBOX" | "Sent" | "Drafts" | "Junk" | "Trash" | "Archive";
 type PreparedImapImport = {
     message: UpsertMessageInput;
     attachments: Array<{
@@ -82,6 +82,7 @@ export type ImapSyncTarget = {
 const mailboxFallbackNames = {
     Sent: new Set(["sent", "sent mail", "sent messages", "sent items", "已发送", "已发送邮件"]),
     Drafts: new Set(["draft", "drafts", "草稿", "草稿箱", "草稿邮件"]),
+    Junk: new Set(["junk", "junk mail", "junk e-mail", "spam", "spam messages", "bulk mail", "垃圾邮件", "垃圾邮件箱"]),
     Trash: new Set(["trash", "bin", "deleted", "deleted items", "垃圾箱", "已删除", "已删除邮件"]),
     Archive: new Set(["archive", "archives", "archived", "归档", "已归档", "存档"])
 } as const;
@@ -101,9 +102,12 @@ function findSpecialMailbox(mailboxes: ListResponse[], specialUse: string, commo
 }
 export function discoverImapSyncTargets(mailboxes: ListResponse[], gmailLabels: boolean): ImapSyncTarget[] {
     const targets: ImapSyncTarget[] = [{ mailboxPath: "INBOX", localFolder: "INBOX", gmailArchive: false }];
+    const junk = findSpecialMailbox(mailboxes, "\\Junk", mailboxFallbackNames.Junk)
+        ?? findSpecialMailbox(mailboxes, "\\Spam", mailboxFallbackNames.Junk);
     const candidates: Array<[ListResponse | undefined, LocalMailboxFolder, boolean]> = [
         [findSpecialMailbox(mailboxes, "\\Sent", mailboxFallbackNames.Sent), "Sent", false],
         [findSpecialMailbox(mailboxes, "\\Drafts", mailboxFallbackNames.Drafts), "Drafts", false],
+        [junk, "Junk", false],
         [findSpecialMailbox(mailboxes, "\\Trash", mailboxFallbackNames.Trash), "Trash", false]
     ];
     const archive = findSpecialMailbox(mailboxes, "\\Archive", mailboxFallbackNames.Archive);
