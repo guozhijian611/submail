@@ -867,11 +867,12 @@ function applyMessageViewFilters(view: string | undefined, clauses: string[], va
         case "TRASH":
             clauses.push(`${prefix}is_deleted = 1`);
             break;
+        case "JUNK":
         case "SENT":
         case "DRAFTS":
             clauses.push(`${prefix}folder = ?`);
             clauses.push(`${prefix}is_deleted = 0`);
-            values.push(view === "SENT" ? "Sent" : "Drafts");
+            values.push(view === "SENT" ? "Sent" : view === "DRAFTS" ? "Drafts" : "Junk");
             break;
         case "INBOX":
         default:

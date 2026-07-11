@@ -15,22 +15,37 @@ test("IMAP special folders and Gmail archive labels map to local views", async (
     import { accountRepo, attachmentRepo, mailboxCursorRepo, messageRepo } from "./apps/api/src/repositories.ts";
     import { db } from "./apps/api/src/db.ts";
     const slash = String.fromCharCode(92);
-    const mailbox = (path, specialUse, flags = new Set()) => ({ path, delimiter: "/", flags, specialUse });
+    const mailbox = (path, specialUse, flags = new Set(), delimiter = "/") => ({ path, delimiter, flags, specialUse });
     const specialTargets = discoverImapSyncTargets([
       mailbox("Sent Items", slash + "Sent"),
       mailbox("Drafts", slash + "Drafts"),
+      mailbox("Junk", slash + "Junk"),
       mailbox("Deleted", slash + "Trash"),
       mailbox("Archive", slash + "Archive"),
       mailbox("Ignored", slash + "Sent", new Set([slash + "Noselect"]))
     ], false);
+    const junkFallbackPaths = ["Junk Mail", "Spam", "垃圾邮件"].map((path) =>
+      discoverImapSyncTargets([mailbox(path)], false).find((target) => target.localFolder === "Junk")?.mailboxPath
+    );
+    const nestedJunkFallback = discoverImapSyncTargets([
+      mailbox("其他文件夹.Spam", undefined, new Set(), ".")
+    ], false).find((target) => target.localFolder === "Junk");
+    const spamSpecialUse = discoverImapSyncTargets([
+      mailbox("Provider Bulk", slash + "Spam")
+    ], false).find((target) => target.localFolder === "Junk");
+    const noselectJunk = discoverImapSyncTargets([
+      mailbox("Junk", slash + "Junk", new Set([slash + "Noselect"]))
+    ], false).find((target) => target.localFolder === "Junk");
     const gmailTargets = discoverImapSyncTargets([
       mailbox("[Gmail]/Sent Mail", slash + "Sent"),
       mailbox("Archive"),
       mailbox("[Gmail]/All Mail", slash + "All")
     ], true);
     const gmailArchive = gmailTargets.find((target) => target.localFolder === "Archive");
+    const junkTarget = specialTargets.find((target) => target.localFolder === "Junk");
     const inboxMessage = { seq: 1, uid: 10, flags: new Set(), labels: new Set([slash + "Inbox", slash + "All"]) };
     const archivedMessage = { seq: 2, uid: 11, flags: new Set([slash + "Seen", slash + "Flagged"]), labels: new Set([slash + "All"]) };
+    const junkMessage = { seq: 3, uid: 12, flags: new Set([slash + "Seen", slash + "Flagged"]) };
     const sizedMessages = Array.from({ length: 10 }, (_, index) => ({ seq: index + 1, uid: index + 1, size: 1024 * 1024, flags: new Set() }));
     const oldestBudgeted = selectImapPreparationBatch(sizedMessages, "oldest", 3 * 1024 * 1024);
     const newestBudgeted = selectImapPreparationBatch(sizedMessages, "newest", 3 * 1024 * 1024);
@@ -132,10 +147,15 @@ test("IMAP special folders and Gmail archive labels map to local views", async (
     const changedIdentityRejected = !await accountRepo.incomingIdentityMatches(accountSnapshot);
     const result = {
       folders: specialTargets.map((target) => target.localFolder),
+      junkFallbackPaths,
+      nestedJunkFallback,
+      spamSpecialUse,
+      noselectJunk,
       gmailArchive,
       inboxAcceptedAsArchive: belongsToTarget(inboxMessage, gmailArchive),
       archivedAccepted: belongsToTarget(archivedMessage, gmailArchive),
       archivedState: remoteMessageState(archivedMessage, gmailArchive),
+      junkState: remoteMessageState(junkMessage, junkTarget),
       preparationBudget: {
         oldest: oldestBudgeted.map((message) => message.uid),
         newest: newestBudgeted.map((message) => message.uid)
@@ -183,7 +203,11 @@ test("IMAP special folders and Gmail archive labels map to local views", async (
   const resultLine = child.stdout.split("\n").find((line) => line.startsWith("__RESULT__"));
   assert(resultLine, child.stdout);
   const result = JSON.parse(resultLine.slice("__RESULT__".length));
-  assert.deepEqual(result.folders, ["INBOX", "Sent", "Drafts", "Trash", "Archive"]);
+  assert.deepEqual(result.folders, ["INBOX", "Sent", "Drafts", "Junk", "Trash", "Archive"]);
+  assert.deepEqual(result.junkFallbackPaths, ["Junk Mail", "Spam", "垃圾邮件"]);
+  assert.equal(result.nestedJunkFallback.mailboxPath, "其他文件夹.Spam");
+  assert.equal(result.spamSpecialUse.mailboxPath, "Provider Bulk");
+  assert.equal(result.noselectJunk, undefined);
   assert.equal(result.gmailArchive.localFolder, "Archive");
   assert.equal(result.gmailArchive.mailboxPath, "[Gmail]/All Mail");
   assert.equal(result.gmailArchive.gmailArchive, true);
@@ -193,6 +217,10 @@ test("IMAP special folders and Gmail archive labels map to local views", async (
   assert.equal(result.archivedState.isStarred, true);
   assert.equal(result.archivedState.isArchived, true);
   assert.equal(result.archivedState.isDeleted, false);
+  assert.equal(result.junkState.isRead, true);
+  assert.equal(result.junkState.isStarred, true);
+  assert.equal(result.junkState.isArchived, false);
+  assert.equal(result.junkState.isDeleted, false);
   assert.deepEqual(result.preparationBudget.oldest, [1, 2, 3]);
   assert.deepEqual(result.preparationBudget.newest, [8, 9, 10]);
   assert.equal(result.stateIsolation.sameGenerationStarred, 1);

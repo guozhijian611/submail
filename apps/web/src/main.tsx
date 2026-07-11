@@ -132,7 +132,7 @@ type Message = {
   reference_ids?: string;
 };
 
-type MailFolder = "INBOX" | "STARRED" | "SENT" | "DRAFTS" | "ARCHIVED" | "TRASH";
+type MailFolder = "INBOX" | "STARRED" | "SENT" | "DRAFTS" | "ARCHIVED" | "JUNK" | "TRASH";
 
 type ComposerPrefill = {
   accountId?: string;
@@ -608,6 +608,7 @@ const folderLabels: Record<MailFolder, string> = {
   SENT: "已发送",
   DRAFTS: "草稿",
   ARCHIVED: "已归档",
+  JUNK: "垃圾邮件",
   TRASH: "垃圾箱"
 };
 
@@ -623,6 +624,7 @@ function Sidebar({ state, setState, navigate, onSync }: {
     { folder: "SENT", icon: <Send size={16} /> },
     { folder: "DRAFTS", icon: <FileText size={16} /> },
     { folder: "ARCHIVED", icon: <Archive size={16} /> },
+    { folder: "JUNK", icon: <CircleAlert size={16} /> },
     { folder: "TRASH", icon: <Trash2 size={16} /> }
   ];
   return (

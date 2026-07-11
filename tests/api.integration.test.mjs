@@ -514,6 +514,16 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
       'Sender', 'sender@example.com', '[]', 'remote archive', 'remote archive', NULL, NULL, '[]',
       1, 0, 1, 0, ?, ?)
   `).run(remoteArchiveId, accountId, new Date().toISOString(), new Date().toISOString());
+  const remoteJunkId = "remote-junk-message";
+  directDb.prepare(`
+    INSERT INTO messages (
+      id, account_id, folder, uid, remote_mailbox, remote_uid_validity, message_id, subject,
+      sender_name, sender_email, recipients, snippet, text_body, html_body, sent_at, flags,
+      is_read, is_starred, is_archived, is_deleted, created_at, updated_at
+    ) VALUES (?, ?, 'Junk', 9, 'Junk', '1', '<remote-junk@example.com>', 'Remote junk',
+      'Sender', 'sender@example.com', '[]', 'remote junk', 'remote junk', NULL, NULL, '[]',
+      0, 0, 0, 0, ?, ?)
+  `).run(remoteJunkId, accountId, new Date().toISOString(), new Date().toISOString());
   directDb.prepare(`
     INSERT INTO attachments (id, message_id, filename, content_type, size, content_id, content_blob, storage_path, created_at)
     VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)
@@ -603,6 +613,12 @@ test("production bootstrap, auth, secret storage and API key scopes", { timeout:
     body: JSON.stringify({ isArchived: false })
   });
   assert.equal(remoteArchiveRestore.response.status, 409, JSON.stringify(remoteArchiveRestore.body));
+  const junkPage = await request(baseUrl, `/api/messages?folder=JUNK&accountId=${encodeURIComponent(accountId)}`, { headers: adminHeaders });
+  assert.equal(junkPage.response.status, 200, JSON.stringify(junkPage.body));
+  assert.equal(junkPage.body.pagination.total, 1);
+  assert.deepEqual(junkPage.body.messages.map((message) => message.id), [remoteJunkId]);
+  assert.equal(junkPage.body.messages[0].folder, "Junk");
+  assert.equal(junkPage.body.messages[0].remote_mailbox, "Junk");
 
   const apiKeyCannotMarkAllRead = await request(baseUrl, "/api/admin/messages/mark-all-read", {
     method: "POST",
