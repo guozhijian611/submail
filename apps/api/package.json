@@ -22,7 +22,7 @@
     "knex": "^3.3.0",
     "mailparser": "^3.7.3",
     "mysql2": "^3.22.6",
-    "nanoid": "^5.1.5",
+    "nanoid": "^6.0.0",
     "node-pop3": "^0.11.0",
     "nodemailer": "^9.0.3",
     "pino": "^9.6.0",
