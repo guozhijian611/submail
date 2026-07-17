@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
-    "bullmq": "^5.79.3",
+    "bullmq": "^5.80.6",
     "dotenv": "^16.5.0",
     "express": "^5.2.1",
     "franc-min": "^6.2.0",
