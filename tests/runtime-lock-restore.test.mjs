@@ -76,7 +76,7 @@ async function waitForExit(child, timeoutMs = 10_000) {
   });
 }
 
-test("runtime lock is exclusive, rejects live-lock override, and archives only explicitly broken stale locks", { timeout: 45_000 }, async (t) => {
+test("runtime lock is exclusive, rejects live-lock override, and requires an override for a fresh foreign lock", { timeout: 45_000 }, async (t) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "submail-runtime-lock-"));
   const databasePath = path.join(tempDir, "submail.sqlite");
   const storagePath = path.join(tempDir, "storage");
@@ -99,6 +99,8 @@ test("runtime lock is exclusive, rejects live-lock override, and archives only e
   assert.equal(firstLock.pid, first.pid);
   assert.equal(firstLock.purpose, "api");
   assert.match(firstLock.ownerToken, /^[a-f0-9]{64}$/);
+  assert.equal(firstLock.leaseTimeoutMs, 60_000);
+  assert.match(firstLock.processStartedAt, /^\d{4}-\d{2}-\d{2}T/);
 
   const contender = spawnApi({ databasePath, storagePath, port: await freePort(), breakStale: true });
   const contenderOutput = captureOutput(contender);
@@ -146,6 +148,63 @@ test("runtime lock is exclusive, rejects live-lock override, and archives only e
   assert.equal(JSON.parse(await fs.readFile(lockPath, "utf8")).ownerToken, foreignOwner.ownerToken);
   assert.match(staleOwnerOutput(), /lock ownership changed|owner 已变更/i);
   await fs.rm(lockPath);
+});
+
+test("runtime lock automatically recovers expired current and legacy leases", { timeout: 45_000 }, async (t) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "submail-expired-runtime-lock-"));
+  const databasePath = path.join(tempDir, "submail.sqlite");
+  const storagePath = path.join(tempDir, "storage");
+  const lockPath = `${databasePath}.runtime-lock`;
+  let first;
+  let replacement;
+  t.after(async () => {
+    for (const child of [first, replacement]) {
+      if (child?.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      if (child?.exitCode === null && child.signalCode === null) await once(child, "exit");
+    }
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  const firstPort = await freePort();
+  first = spawnApi({ databasePath, storagePath, port: firstPort });
+  const firstOutput = captureOutput(first);
+  await waitForHealth(firstPort, first, firstOutput);
+  const firstLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
+  first.kill("SIGKILL");
+  await waitForExit(first);
+  first = undefined;
+  const expiredAt = new Date(Date.now() - firstLock.leaseTimeoutMs - 1_000);
+  await fs.utimes(lockPath, expiredAt, expiredAt);
+
+  const replacementPort = await freePort();
+  replacement = spawnApi({ databasePath, storagePath, port: replacementPort });
+  const replacementOutput = captureOutput(replacement);
+  await waitForHealth(replacementPort, replacement, replacementOutput);
+  const replacementLock = JSON.parse(await fs.readFile(lockPath, "utf8"));
+  assert.notEqual(replacementLock.ownerToken, firstLock.ownerToken);
+  assert.match(replacementOutput(), /Archived a stale or manually overridden runtime lock/);
+
+  replacement.kill("SIGTERM");
+  assert.equal(await waitForExit(replacement), 0, replacementOutput());
+  replacement = undefined;
+
+  const legacyLock = {
+    version: 1,
+    pid: 7,
+    hostname: "stopped-container.example",
+    ownerToken: "a".repeat(64),
+    purpose: "api",
+    startedAt: "2000-01-01T00:00:00.000Z"
+  };
+  await fs.writeFile(lockPath, `${JSON.stringify(legacyLock)}\n`, { mode: 0o600 });
+  const legacyExpiredAt = new Date(Date.now() - 10 * 60_000 - 1_000);
+  await fs.utimes(lockPath, legacyExpiredAt, legacyExpiredAt);
+
+  const legacyReplacementPort = await freePort();
+  replacement = spawnApi({ databasePath, storagePath, port: legacyReplacementPort });
+  const legacyReplacementOutput = captureOutput(replacement);
+  await waitForHealth(legacyReplacementPort, replacement, legacyReplacementOutput);
+  assert.notEqual(JSON.parse(await fs.readFile(lockPath, "utf8")).ownerToken, legacyLock.ownerToken);
 });
 
 test("restore preserves a corrupt main database and WAL/SHM artifacts, then installs a valid backup", { timeout: 20_000 }, async (t) => {

@@ -51,7 +51,7 @@
 - **AI assistance:** OpenAI-compatible providers for summaries, suggested replies, and email composition. Generated content is placed in the editor and is never sent automatically.
 - **Translation:** Google-compatible, LibreTranslate, or custom HTTP providers with long-message chunking, a configurable default language, and opt-in automatic translation for clearly detected English email.
 - **MCP and API:** Eight MCP tools plus a direct send endpoint, sharing the same authorization and delivery service.
-- **Operations:** Health checks, least-privilege containers, durable Redis queues, audit retention, SQLite online backup, and atomic restore.
+- **Operations:** Health checks, least-privilege containers, durable Redis queues, audit retention, heartbeat-backed SQLite runtime locks with verified stale-lock recovery, online backup, and atomic restore.
 
 ## Screenshots
 

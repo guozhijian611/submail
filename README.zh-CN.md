@@ -60,7 +60,7 @@
 - **AI 邮件助手：**支持 OpenAI-compatible 服务，可总结邮件、推荐回信和生成邮件；结果不会自动发送。
 - **翻译：**Google-compatible、LibreTranslate 或自定义 HTTP 服务，支持长邮件自动分块、默认目标语言，以及对明确英文邮件的可选自动翻译。
 - **MCP 与 API：**8 个 MCP 工具与 HTTP 发信 API 共用同一套授权与投递服务。
-- **运维：**Docker Compose 一键部署、Redis 持久化队列、健康检查、SQLite 在线备份与原子恢复。
+- **运维：**Docker Compose 一键部署、Redis 持久化队列、健康检查、带心跳与僵尸锁自动恢复的 SQLite 运行锁、在线备份与原子恢复。
 
 ## 快速开始
 

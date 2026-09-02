@@ -12,6 +12,8 @@ export type RuntimeLockOwner = {
   ownerToken: string;
   purpose: RuntimeLockPurpose;
   startedAt: string;
+  processStartedAt?: string;
+  leaseTimeoutMs?: number;
 };
 
 export type RuntimeLock = {
@@ -33,7 +35,16 @@ type LockSnapshot = {
   owner?: RuntimeLockOwner;
   device: bigint;
   inode: bigint;
+  modifiedAtMs: number;
+  modifiedAtNs: bigint;
 };
+
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const LEASE_TIMEOUT_MS = 60_000;
+const LEGACY_LEASE_TIMEOUT_MS = 10 * 60_000;
+const MAX_LEASE_TIMEOUT_MS = 24 * 60 * 60_000;
+const PROCESS_START_TOLERANCE_MS = 2_000;
+const currentProcessStartedAtMs = Date.now() - process.uptime() * 1_000;
 
 function parseOwner(raw: string): RuntimeLockOwner | undefined {
   try {
@@ -48,6 +59,16 @@ function parseOwner(raw: string): RuntimeLockOwner | undefined {
       || parsed.ownerToken.length < 16
       || (parsed.purpose !== "api" && parsed.purpose !== "restore")
       || typeof parsed.startedAt !== "string"
+      || !Number.isFinite(Date.parse(parsed.startedAt))
+      || (parsed.processStartedAt !== undefined && (
+        typeof parsed.processStartedAt !== "string"
+        || !Number.isFinite(Date.parse(parsed.processStartedAt))
+      ))
+      || (parsed.leaseTimeoutMs !== undefined && (
+        !Number.isSafeInteger(parsed.leaseTimeoutMs)
+        || parsed.leaseTimeoutMs < LEASE_TIMEOUT_MS
+        || parsed.leaseTimeoutMs > MAX_LEASE_TIMEOUT_MS
+      ))
     ) return undefined;
     return parsed as RuntimeLockOwner;
   } catch {
@@ -63,11 +84,33 @@ function readSnapshot(lockPath: string): LockSnapshot {
       raw: fs.readFileSync(fd, "utf8"),
       owner: undefined,
       device: stat.dev,
-      inode: stat.ino
+      inode: stat.ino,
+      modifiedAtMs: Number(stat.mtimeMs),
+      modifiedAtNs: stat.mtimeNs
     };
   } finally {
     fs.closeSync(fd);
   }
+}
+
+function ownerProcessIsAlive(owner: RuntimeLockOwner): boolean {
+  if (owner.hostname !== os.hostname()) return false;
+  if (owner.pid === process.pid) {
+    const recordedProcessStart = Date.parse(owner.processStartedAt ?? owner.startedAt);
+    if (recordedProcessStart < currentProcessStartedAtMs - PROCESS_START_TOLERANCE_MS) {
+      return false;
+    }
+  }
+  return processIsAlive(owner.pid);
+}
+
+function staleAfterMs(owner: RuntimeLockOwner): number {
+  return owner.leaseTimeoutMs ?? LEGACY_LEASE_TIMEOUT_MS;
+}
+
+function lockLeaseExpired(snapshot: LockSnapshot): boolean {
+  if (!snapshot.owner) return false;
+  return Date.now() - snapshot.modifiedAtMs >= staleAfterMs(snapshot.owner);
 }
 
 function processIsAlive(pid: number): boolean {
@@ -97,7 +140,9 @@ function createLock(lockPath: string, purpose: RuntimeLockPurpose): RuntimeLock 
     hostname: os.hostname(),
     ownerToken: crypto.randomBytes(32).toString("hex"),
     purpose,
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
+    processStartedAt: new Date(currentProcessStartedAtMs).toISOString(),
+    leaseTimeoutMs: LEASE_TIMEOUT_MS
   };
   const fd = fs.openSync(lockPath, "wx", 0o600);
   let stat: fs.BigIntStats;
@@ -113,14 +158,27 @@ function createLock(lockPath: string, purpose: RuntimeLockPurpose): RuntimeLock 
     }
     throw error;
   }
-  fs.closeSync(fd);
 
-  let released = false;
+  const heartbeatTimer = setInterval(() => {
+    try {
+      const now = new Date();
+      fs.futimesSync(fd, now, now);
+    } catch {
+      // A transient heartbeat failure is retried. If it persists, another
+      // process may recover the expired lease after the safety timeout.
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+  heartbeatTimer.unref();
+
+  let finished = false;
   return {
     path: lockPath,
     owner,
     release(): boolean {
-      if (released) return false;
+      if (finished) return false;
+      finished = true;
+      clearInterval(heartbeatTimer);
+      fs.closeSync(fd);
       let current: LockSnapshot;
       try {
         current = readSnapshot(lockPath);
@@ -137,7 +195,6 @@ function createLock(lockPath: string, purpose: RuntimeLockPurpose): RuntimeLock 
         || current.owner.hostname !== owner.hostname
       ) return false;
       fs.unlinkSync(lockPath);
-      released = true;
       return true;
     }
   };
@@ -168,22 +225,24 @@ export function acquireRuntimeLock(
       throw error;
     }
 
-    if (!options.allowStaleBreak) {
-      throw new RuntimeLockError(existingLockMessage(lockPath, snapshot), lockPath);
-    }
-
-    if (
-      snapshot.owner?.hostname === os.hostname()
-      && processIsAlive(snapshot.owner.pid)
-    ) {
+    if (snapshot.owner && ownerProcessIsAlive(snapshot.owner)) {
       throw new RuntimeLockError(
         `${existingLockMessage(lockPath, snapshot)}。该本机 PID 仍存活，即使设置人工接管开关也不会删除活锁`,
         lockPath
       );
     }
 
+    const leaseExpired = lockLeaseExpired(snapshot);
+    if (!options.allowStaleBreak && !leaseExpired) {
+      throw new RuntimeLockError(existingLockMessage(lockPath, snapshot), lockPath);
+    }
+
     const currentStat = fs.statSync(lockPath, { bigint: true });
-    if (currentStat.dev !== snapshot.device || currentStat.ino !== snapshot.inode) continue;
+    if (
+      currentStat.dev !== snapshot.device
+      || currentStat.ino !== snapshot.inode
+      || currentStat.mtimeNs !== snapshot.modifiedAtNs
+    ) continue;
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const candidate = `${lockPath}.stale-${timestamp}-${crypto.randomBytes(4).toString("hex")}`;
     try {

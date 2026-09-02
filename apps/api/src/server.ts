@@ -13,6 +13,9 @@ const runtimeLock = acquireRuntimeLock(runtimeLockIdentity, {
     purpose: "api",
     allowStaleBreak: process.env.SUBMAIL_BREAK_STALE_RUNTIME_LOCK === "YES"
 });
+if (runtimeLock.staleLockPath) {
+    logger.warn({ staleLockPath: runtimeLock.staleLockPath }, "Archived a stale or manually overridden runtime lock and acquired ownership");
+}
 let openedDb: (typeof import("./db.js"))["db"] | undefined;
 try {
     const [repositoriesModule, routesModule, syncModule, dbModule, integrationsModule, queueModule, mailModule] = await Promise.all([
