@@ -20,7 +20,7 @@
     "franc-min": "^6.2.0",
     "imapflow": "^1.0.181",
     "knex": "^3.3.0",
-    "mailparser": "^3.7.3",
+    "mailparser": "^3.9.20",
     "mysql2": "^3.22.6",
     "nanoid": "^5.1.5",
     "node-pop3": "^0.11.0",
