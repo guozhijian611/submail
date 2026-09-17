@@ -24,7 +24,7 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.62.2",
-    "epubjs": "0.3.93"
+    "epubjs": "0.4.2"
   },
   "overrides": {
     "epubjs@0.3.93": {
